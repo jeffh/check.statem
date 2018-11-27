@@ -5,7 +5,7 @@
             [clojure.test.check.clojure-test :refer [defspec]]
             [clojure.test.check.generators :as gen]
             [clojure.test.check.properties :refer [for-all]]
-            [clojure.test.check.random :refer [make-random]]
+            [clojure.test.check.random :as random :refer [make-random]]
             [clojure.test.check.rose-tree :as rose]))
 
 ;; Implementation detail:
@@ -233,21 +233,37 @@
                                  (map #(vector (first %) (given (second %) state))))
                                 (apply dissoc (:commands statem) excluded-commands))]
     (if (pos? (count possible-commands))
-      (gen/bind (select-generator possible-commands)
+      (gen/bind (select-generator statem state possible-commands)
                 (fn [[kind & data :as cmd]]
-                  (if (only-when (statem-command statem kind) state cmd)
-                    (if (pos? size)
-                      (gen/fmap
-                       (partial into [(assignment-statement varindex cmd)])
-                       (cmd-state-seq select-generator
-                                      (advance (statem-command statem kind) state (varsym varindex) cmd)
-                                      statem
-                                      (dec size)
-                                      #{}
-                                      (inc varindex)))
-                      (gen/return [(assignment-statement varindex cmd)]))
-                    (cmd-state-seq select-generator state statem size (conj excluded-commands kind) (inc varindex)))))
+                  (if (nil? cmd)
+                    (gen/return [])
+                    (if (only-when (statem-command statem kind) state cmd)
+                      (if (pos? size)
+                        (gen/fmap
+                         (partial into [(assignment-statement varindex cmd)])
+                         (cmd-state-seq select-generator
+                                        (advance (statem-command statem kind) state (varsym varindex) cmd)
+                                        statem
+                                        (dec size)
+                                        #{}
+                                        (inc varindex)))
+                        (gen/return [(assignment-statement varindex cmd)]))
+                      (cmd-state-seq select-generator state statem size (conj excluded-commands kind) (inc varindex))))))
       (gen/return []))))
+
+(defn select-cmds
+  "A helper that simply returns a function that conforms to select-generator param.
+
+  f must accept a map of all valid commands to take. Keys are keywords of the
+  commands and values are the command generator for that given command.
+
+  The returned generator must choose to return a command generator or nil to
+  indicate the end of the cmd seq. Note that cmd-seq may choose to end a
+  sequence if it has reached the size needed to generate.
+  "
+  [f]
+  (fn select-generator [state statem possible-kw->cmd-gen]
+    (f possible-kw->cmd-gen)))
 
 (defn cmd-seq
   "A generator that produces a random sequence of commands that conform to a
@@ -266,7 +282,7 @@
   ([statem]
    (cmd-seq statem nil))
   ([statem {:keys [select-generator size initial-state]
-            :or   {select-generator (comp gen/one-of vals)}
+            :or   {select-generator (select-cmds (comp gen/one-of vals))}
             :as   options}]
    (if size
      (gen/shrink-2

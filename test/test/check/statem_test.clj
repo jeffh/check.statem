@@ -1,6 +1,7 @@
 (ns test.check.statem-test
   (:require [clojure.test :refer :all]
             [test.check.statem :refer :all]
+            [clojure.test.check :as tc]
             [clojure.test.check.clojure-test :refer [defspec]]
             [clojure.test.check.generators :as gen]
             [clojure.test.check.properties :refer [for-all]]))
@@ -50,9 +51,31 @@
     :enqueue (.enqueue ^IQueue (var-table (second cmd)) (nth cmd 2))
     :deque   (.dequeue ^IQueue (var-table (second cmd)))))
 
-(defspec behaves-like-a-queue 100
+(defn- deque-skewed-cmds [kw->cmds]
+  (let [freq {:new     100
+              :enqueue 1
+              :deque   1000}]
+    (gen/frequency (mapv (fn [[k c]]
+                           [(freq k) c])
+                         kw->cmds))))
+
+(defspec queue-program-generation-using-fair-distribution 100
   (for-all [cmds (cmd-seq queue-statem)]
            (:ok? (run-cmds queue-statem cmds queue-runner))))
+
+(defspec queue-program-generation-using-custom-distribution 100
+  (for-all [cmds (cmd-seq queue-statem {:select-generator (select-cmds deque-skewed-cmds)})]
+           (let [f (frequencies (mapv (comp first last) cmds))]
+             (and
+              ;; statem restricts new to always be 1
+              (= 1 (:new f))
+              ;; we should almost always deque as many times as we enque based
+              ;; on our bias generator
+              (< (- (:enqueue f 0)
+                    (:deque f 0))
+                 3)
+              ;; also, this should still pass against our queue
+              (:ok? (run-cmds queue-statem cmds queue-runner))))))
 
 (defn spec-timings [v]
   (let [t 10]
@@ -67,4 +90,3 @@
   (println (long (spec-timings #'test.check.statem-test/behaves-like-a-queue)) " ms")
   (clojure.test/test-var #'test.check.statem-test/behaves-like-a-queue)
   )
-
