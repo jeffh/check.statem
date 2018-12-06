@@ -2,7 +2,6 @@
   (:require [clojure.test.check.generators :as gen]
             [clojure.test.check.random :as random]
             [clojure.test.check.rose-tree :as rose]
-            [clojure.core.async :as async]
             [test.check.statem :as statem])
   (:import java.util.concurrent.Semaphore))
 
@@ -53,25 +52,25 @@
 (defn- cmd-state-seq [select-generator state statem size excluded-commands varindex]
   (let [possible-commands (into {}
                                 (comp
-                                 (filter #(assume (second %) state))
-                                 (map #(vector (first %) (given (second %) state))))
+                                 (filter #(statem/assume (second %) state))
+                                 (map #(vector (first %) (statem/given (second %) state))))
                                 (apply dissoc (:commands statem) excluded-commands))]
     (if (pos? (count possible-commands))
       (gen/bind (select-generator statem state possible-commands)
                 (fn [[kind & data :as cmd]]
                   (if (nil? cmd)
                     (gen/return [])
-                    (if (only-when (statem-command statem kind) state cmd)
+                    (if (statem/only-when (#'statem/statem-command statem kind) state cmd)
                       (if (pos? size)
                         (gen/fmap
-                         (partial into [(assignment-statement varindex cmd)])
+                         (partial into [(#'statem/assignment-statement varindex cmd)])
                          (cmd-state-seq select-generator
-                                        (advance (statem-command statem kind) state (varsym varindex) cmd)
+                                        (statem/advance (#'statem/statem-command statem kind) state (#'statem/varsym varindex) cmd)
                                         statem
                                         (dec size)
                                         #{}
                                         (inc varindex)))
-                        (gen/return [(assignment-statement varindex cmd)]))
+                        (gen/return [(#'statem/assignment-statement varindex cmd)]))
                       (cmd-state-seq select-generator state statem size (conj excluded-commands kind) (inc varindex))))))
       (gen/return []))))
 
