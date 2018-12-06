@@ -34,7 +34,7 @@
                           (pos? (count (mstate :items)))))
           (advance [_ _] (update mstate :items subvec 1))
           (given [] (gen/return (:ref mstate)))
-          (verify [_ r] (= r (first (:items mstate))))))
+          (verify [_ _ r] (= r (first (:items mstate))))))
 
 (deftype TestQueue [^:volatile-mutable items ^:volatile-mutable capacity]
   IQueue
@@ -45,7 +45,7 @@
       (set! (.items this) (subvec items 1))
       result)))
 
-(defn queue-runner [cmd varsym var-table]
+(defn queue-runner [cmd {:keys [varsym var-table]}]
   (case (first cmd)
     :new     (TestQueue. [] (second cmd))
     :enqueue (.enqueue ^IQueue (var-table (second cmd)) (nth cmd 2))
@@ -86,7 +86,16 @@
      t)))
 
 (comment
-  ;; ~2400ms
-  (println (long (spec-timings #'test.check.statem-test/behaves-like-a-queue)) " ms")
-  (clojure.test/test-var #'test.check.statem-test/behaves-like-a-queue)
+  (test.check.statem/statem-check! queue-statem)
+  (map (comp first last) (gen/sample (cmd-seq queue-statem {:size 3})))
+
+  ;; --- no tracing
+  ;; ~2400ms ;; first test
+  ;; ~3500ms ;; fix shrinking, preserving var indicies
+  ;; ~2700ms ;; vectorize varsyms, naive walk of generated form
+  ;; ~2500ms ;; convert statemachine from map to defrecord with field access
+  ;; ~1800ms ;; inline drop-seq-permutations into shrink-commands* transducer
+  (println (long (spec-timings #'test.check.statem-test/queue-program-generation-using-fair-distribution)) " ms")
+  (clojure.test/test-var #'test.check.statem-test/queue-program-generation-using-fair-distribution)
+  (test.check.statem/dump-trace)
   )
