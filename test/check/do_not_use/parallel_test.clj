@@ -1,6 +1,6 @@
-(ns test.check.statem.parallel-test
+(ns check.do-not-use.parallel-test
   (:require [clojure.test :refer :all]
-            [test.check.statem.parallel :refer :all]
+            [check.do-not-use.parallel :refer :all]
             [clojure.test.check :as tc]
             [clojure.test.check.clojure-test :refer [defspec]]
             [clojure.test.check.generators :as gen]

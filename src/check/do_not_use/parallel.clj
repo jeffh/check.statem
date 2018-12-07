@@ -1,8 +1,9 @@
-(ns test.check.statem.parallel
+(ns check.do-not-use.parallel
+  "100% experimental. Expect nothing will be here tomorrow."
   (:require [clojure.test.check.generators :as gen]
             [clojure.test.check.random :as random]
             [clojure.test.check.rose-tree :as rose]
-            [test.check.statem :as statem])
+            [check.statem :as statem])
   (:import java.util.concurrent.Semaphore))
 
 ;; We acknowledge the evil of accessing a private var, but we need it
@@ -84,7 +85,7 @@
       (gen/bind
        (cmd-state-seq select-generator initial-state statem size #{} 1)
        (fn [cmds]
-         (gen/gen-pure (statem/shrink-commands initial-state statem cmds)))))
+         (gen/gen-pure (#'statem/shrink-commands initial-state statem cmds)))))
      (gen/bind (gen/sized #(gen/choose 0 %))
                #(cmd-seq statem (assoc options :size %))))))
 

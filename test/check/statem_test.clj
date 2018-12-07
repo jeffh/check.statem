@@ -1,6 +1,6 @@
-(ns test.check.statem-test
+(ns check.statem-test
   (:require [clojure.test :refer :all]
-            [test.check.statem :refer :all]
+            [check.statem :refer :all]
             [clojure.test.check :as tc]
             [clojure.test.check.clojure-test :refer [defspec]]
             [clojure.test.check.generators :as gen]
@@ -34,7 +34,7 @@
                           (pos? (count (mstate :items)))))
           (advance [_ _] (update mstate :items subvec 1))
           (given [] (gen/return (:ref mstate)))
-          (verify [_ _ r] (= r (first (:items mstate))))))
+          (verify [prev-mstate _ r] (= r (first (:items prev-mstate))))))
 
 (deftype TestQueue [^:volatile-mutable items ^:volatile-mutable capacity]
   IQueue
@@ -45,7 +45,7 @@
       (set! (.items this) (subvec items 1))
       result)))
 
-(defn queue-runner [cmd {:keys [varsym var-table]}]
+(defn queue-runner [cmd {:keys [var-sym var-table]}]
   (case (first cmd)
     :new     (TestQueue. [] (second cmd))
     :enqueue (.enqueue ^IQueue (var-table (second cmd)) (nth cmd 2))
