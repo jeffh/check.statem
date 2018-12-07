@@ -25,7 +25,7 @@ TODO
       (set! (.items this) (subvec items 1))
       result)))
 
-(defn queue-runner [cmd {:keys [varsym var-table]}]
+(defn queue-interpreter [cmd {:keys [varsym var-table]}]
   (case (first cmd)
     :new     (TestQueue. [] (second cmd))
     :enqueue (.enqueue ^IQueue (var-table (second cmd)) (nth cmd 2))
