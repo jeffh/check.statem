@@ -4,7 +4,8 @@
             [clojure.test.check :as tc]
             [clojure.test.check.clojure-test :refer [defspec]]
             [clojure.test.check.generators :as gen]
-            [clojure.test.check.properties :refer [for-all]]))
+            [clojure.test.check.properties :refer [for-all]]
+            [clojure.walk :as walk]))
 
 (definterface IQueue
   (^void init [^int size])
@@ -22,18 +23,18 @@
   "The contract for a queue with a max size"
   [mstate]
   (:new (assume [] (nil? mstate))
-        (given [] gen/pos-int)
+        (args [] gen/pos-int)
         (advance [v [_ n]] {:items    []
                             :capacity n
                             :ref      v}))
   (:enqueue (assume [] (and (not (nil? mstate))
                             (< (count (mstate :items)) (mstate :capacity))))
-            (given [] [(gen/return (:ref mstate)) gen/int])
+            (args [] [(gen/return (:ref mstate)) gen/int])
             (advance [v [_ _ n]] (update mstate :items conj n)))
   (:deque (assume [] (and (not (nil? mstate))
                           (pos? (count (mstate :items)))))
           (advance [_ _] (update mstate :items subvec 1))
-          (given [] (gen/return (:ref mstate)))
+          (args [] (gen/return (:ref mstate)))
           (verify [prev-mstate _ r] (= r (first (:items prev-mstate))))))
 
 (deftype TestQueue [^:volatile-mutable items ^:volatile-mutable capacity]
@@ -51,20 +52,14 @@
     :enqueue (.enqueue ^IQueue (var-table (second cmd)) (nth cmd 2))
     :deque   (.dequeue ^IQueue (var-table (second cmd)))))
 
-(defn- deque-skewed-cmds [kw->cmds]
-  (let [freq {:new     100
-              :enqueue 1
-              :deque   1000}]
-    (gen/frequency (mapv (fn [[k c]]
-                           [(freq k) c])
-                         kw->cmds))))
-
 (defspec queue-program-generation-using-fair-distribution 100
   (for-all [cmds (cmd-seq queue-statem)]
            (:ok? (run-cmds queue-statem cmds queue-runner))))
 
 (defspec queue-program-generation-using-custom-distribution 100
-  (for-all [cmds (cmd-seq queue-statem {:select-generator (select-cmds deque-skewed-cmds)})]
+  (for-all [cmds (cmd-seq queue-statem {:select-generator (select-by-frequency {:new     100
+                                                                                :enqueue 1
+                                                                                :deque   1000})})]
            (let [f (frequencies (mapv (comp first last) cmds))]
              (and
               ;; statem restricts new to always be 1
@@ -76,6 +71,61 @@
                  3)
               ;; also, this should still pass against our queue
               (:ok? (run-cmds queue-statem cmds queue-runner))))))
+
+(defn- macroexpand-thrown? [form]
+  (try
+    (walk/macroexpand-all form)
+    false
+    (catch Throwable t
+      (instance? AssertionError (.getCause t)))))
+
+(deftest validate-defstatem
+  (is (macroexpand-thrown? `(defstatem bad-statem [mstate] (:add (~'assume [~'x] true)))))
+  (is (macroexpand-thrown? `(defstatem bad-statem [mstate] (:add (~'args [~'x] gen/int)))))
+  (is (macroexpand-thrown? `(defstatem bad-statem [mstate] (:add (~'advance [~'_])))))
+  (is (macroexpand-thrown? `(defstatem bad-statem [mstate] (:add (~'advance [~'_ ~'_ ~'_])))))
+  (is (macroexpand-thrown? `(defstatem bad-statem [mstate] (:add (~'verify [~'_ ~'_])))))
+  (is (macroexpand-thrown? `(defstatem bad-statem [mstate] (:add (~'verify [~'_ ~'_ ~'_ ~'_])))))
+  (is (macroexpand-thrown? `(defstatem bad-statem [mstate] (:add (~'blah [])))))
+  (is (macroexpand-thrown? `(defstatem bad-statem [mstate this extra]))))
+
+(deftest statem-check-rules
+  (testing "1-less arg in generator destructuring"
+    (is (thrown? AssertionError
+                 (do (defstatem bad-statem [mstate]
+                                (:add (args [] gen/int)
+                                      (verify [_ [a] _] true)))
+                     (statem-check! bad-statem))))
+    (is (thrown? AssertionError
+                 (do (defstatem bad-statem [mstate]
+                                (:add (args [] gen/int)
+                                      (advance [_ [a]] true)))
+                     (statem-check! bad-statem))))
+
+    (is (thrown? AssertionError
+                 (do (defstatem bad-statem [mstate]
+                                (:add (args [] gen/int)
+                                      (verify [_ [a] _] true)))
+                     (statem-check! bad-statem)))))
+
+  (testing "1-more arg in generator destructuring"
+    (is (thrown? AssertionError
+                 (do (defstatem bad-statem [mstate]
+                                (:add (args [] gen/int)
+                                      (verify [_ [a b c] _] true)))
+                     (statem-check! bad-statem))))
+
+    (is (thrown? AssertionError
+                 (do (defstatem bad-statem [mstate]
+                                (:add (args [] gen/int)
+                                      (advance [_ [a b c]] true)))
+                     (statem-check! bad-statem))))
+
+    (is (thrown? AssertionError
+                 (do (defstatem bad-statem [mstate]
+                                (:add (args [] gen/int)
+                                      (verify [_ [a b c] _] true)))
+                     (statem-check! bad-statem))))))
 
 (defn spec-timings [v]
   (let [t 10]

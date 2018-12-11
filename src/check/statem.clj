@@ -83,7 +83,7 @@
 
    - `assume` and `only-when` answers #1, with the first being an optimization
      of the latter.
-   - `given` answers #2
+   - `args` answers #2
    - `advance` answers #3
    - `verify` answers #4
 
@@ -97,16 +97,16 @@
 
     Implementing this provides optimization before generating command data.
     Should be free of side effects.")
-  (given [_ model-state]
-    "Generates command for the current system state. Should be free of side
-    effects.")
+  (args [_ model-state]
+    "Returns a vector of generators to use as input arguments for the command.
+    Should be free of side effects.")
   (only-when [_ model-state cmd-data]
     "Used to assert if this command can be executed for the given state. Return
     true if this command can be executed. Should be free of side effects.")
   (advance [_ model-state var-sym cmd-data]
     "Executes the command and returns the next state. Should be free of side
     effects")
-  (verify [_ model-state previous-model-state cmd-data return-value] ;; verify
+  (verify [_ model-state previous-model-state cmd-data return-value]
     "Asserts if the command is valid after state application. May cause side
     effects on subject under test (sut). The value of model-state is after
     calling advance."))
@@ -128,7 +128,7 @@
    - generate's body will wrap (gen/tuple (gen/return command-name-kw) ...)
    - all methods have default implementations if not specified:
      - `assume` returns true
-     - `given` returns nil. AKA: (gen/tuple (gen/return command-name-kw))
+     - `args` returns nil. AKA: (gen/tuple (gen/return command-name-kw))
      - `only-when` calls through to `assume`
      - `advance` returns model-state it was given
      - `verify` returns true
@@ -146,7 +146,7 @@
       [mstate this]  ; -> state machine's model state is available in all commands
 
       ;; define commands for the state machine
-      (:enqueue (given [] gen/any-printable)
+      (:enqueue (args [] gen/any-printable)
                 (advance [[_ item]] ((fnil conj []) mstate item))
                 (verify [prev-mstate [_ item] ret] (.add sut item)))
 
@@ -163,7 +163,7 @@
       ;; NOTE: invalid code, do not use
       (defstatem queue-statem
         (:enqueue (assume [this model-state])
-                  (given [this model-state])
+                  (args [this model-state])
                   (only-when [this model-state cmd-data])
                   (advance [this model-state cmd-data])
                   (verify [this model-state prev-mstate cmd-data return-value])))
@@ -184,7 +184,7 @@
         Default implementation returns true. Implementation must be free of side
         effects.
 
-    (given [] ...)
+    (args [] ...)
         Return either a vector of generators or a single generator of data
         needed to execute this command. Subsequent functions will receive the
         generated data as cmd-data. The generated data is prefixed with the
@@ -195,7 +195,7 @@
 
         For example:
 
-           (given [] gen/int) => [:command 1]
+           (args [] gen/int) => [:command 1]
 
     (only-when [cmd-data] ...)
         Return true if this command can be used for a given model state or
@@ -208,7 +208,7 @@
 
           `model-state` is the model state that is used for all commands. See
                         'Implied parameters' section above.
-          `cmd-data` refers to the generated command data from `given`.
+          `cmd-data` refers to the generated command data from `args`.
 
 
     (advance [var-sym cmd-data] ...)
@@ -226,7 +226,7 @@
           `var-sym` a opaque value that represents a reference of the return
                     value. Alternatively said, this is a symbolic representation
                     of the subject under test's return value
-          `cmd-data` refers to the generated command data from `given`.
+          `cmd-data` refers to the generated command data from `args`.
 
     (verify [prev-mstate cmd-data return-value] ...)
         Verifies the state machine against the subject under test. Returns true
@@ -241,7 +241,7 @@
           `model-state` is the model state that is used for all commands. See
                         'Implied parameters' section above.
           `prev-mstate` refers to the model state prior to advance.
-          `cmd-data` refers to the generated command data from `given`.
+          `cmd-data` refers to the generated command data from `args`.
           `return-value` refers to the actual value the subject under tested
                          returned when running.
 
@@ -272,7 +272,8 @@
                                                     (into [nil] commands))
         [global-bindings & commands :as cmd-list] commands]
     (when (seq? cmd-list)
-      (assert (vector? global-bindings)))
+      (assert (vector? global-bindings))
+      (assert (<= (count global-bindings) 2)))
     (assert (or (nil? docstring) (string? docstring)))
     `(do
        (def ~table-name
@@ -283,6 +284,11 @@
            :cmd-metadatas {}}))
        ~@(map (fn [c] `(defcommand ~table-name ~(first c) ~global-bindings ~@(rest c))) commands)
        (var ~table-name))))
+
+(defn statem-commands
+  "Returns a sequence of keywords indicating available commands for the state machine."
+  [^StateMachine statem]
+  (keys (.commands statem)))
 
 (defn statem-command [^StateMachine statem command-name]
   (trace 'statem-command
@@ -305,25 +311,26 @@
   ...)) to save typing and some boilerplate in the following ways:
 
    - all methods imply model-state and this via the 4th argument
-   - given's body will wrap (gen/tuple (gen/return command-name-kw) ...)
+   - args's body will wrap (gen/tuple (gen/return command-name-kw) ...)
    - all methods have default implementations if not specified:
      - `assume` returns true
      - `only-when` calls through to `assume`
      - `advance` returns model-state it was given
-     - `given` returns nil. AKA: (gen/tuple (gen/return command-name-kw))
+     - `args` returns nil. AKA: (gen/tuple (gen/return command-name-kw))
      - `verify` returns true
 
   Example:
 
-    (defstatem set-statem)
-    (defcommand set-statem :add [mstate]
-      (given [] gen/any-printable)
-      (advance [[_ value]] (conj (set mstate) value)))
+    (defstatem set-statem [mstate]
+      (:add (args [] [gen/any-printable])
+            (advance [[_ value]] (conj (set mstate) value))))
+
   "
   [table-name cmd-name [model-state this :as shared-bindings] & methods]
   (assert (vector? shared-bindings))
+  (assert (<= (count shared-bindings) 2))
   (assert (every? seq? methods))
-  (let [allowed-methods      '#{assume only-when advance given verify}
+  (let [allowed-methods      '#{assume only-when advance args verify}
         unrecognized-methods (set/difference (set (map first methods))
                                              allowed-methods)]
     (assert (empty? unrecognized-methods)
@@ -339,8 +346,9 @@
         default-impls {'assume    `(assume [] true)
                        'only-when `(only-when [cmd-name#] (assume ~this ~mstate))
                        'advance   `(advance [v# cmd-name#] ~model-state)
-                       'given     `(given [] nil)
-                       'verify    `(verify [prev-mstate# cmd-name# return-value#] true)}
+                       'args      `(args [] nil)
+                       'verify    `(verify [prev-mstate# cmd-name# return-value#] true)
+                       'tags      `(tags [prev-mstate# cmd-name# return-value#] [])}
         impls         (merge default-impls
                              (into {} (map (juxt first identity) methods)))
         fill-impl     (fn [bindings sym]
@@ -352,8 +360,8 @@
                                  ~inputs      (vec (rest ~b))]
                              ~@(rest body))))]
     (doseq [[n impl] default-impls
-            :let [expected-size (count (second impl))
-                  actual-size (count (second (impls n)))]]
+            :let     [expected-size (count (second impl))
+                      actual-size (count (second (impls n)))]]
       (assert (= expected-size actual-size)
               (format "Expected command [%s %s %s] implementation to have %d input parameters, got %d."
                       table-name
@@ -373,9 +381,9 @@
                            ~(fill-impl [mstate] 'assume))
                          (only-when [~this ~mstate ~cmd]
                            ~(fill-impl [mstate cmd] 'only-when))
-                         (given [~this ~mstate]
+                         (args [~this ~mstate]
                            (let [~model-state ~mstate
-                                 generators#  (do ~@(rest (impls 'given)))
+                                 generators#  (do ~@(rest (impls 'args)))
                                  generators#  (if (or (nil? generators#) (seq? generators#) (vector? generators#))
                                                 generators#
                                                 [generators#])]
@@ -507,7 +515,7 @@
     (let [possible-commands (into {}
                                   (comp
                                    (filter #(assume (second %) state))
-                                   (map #(vector (first %) (given (second %) state))))
+                                   (map #(vector (first %) (args (second %) state))))
                                   (apply dissoc (:commands statem) excluded-commands))]
       (if (pos? (count possible-commands))
         (gen/bind (select-generator statem state possible-commands)
@@ -528,7 +536,7 @@
                         (cmd-state-seq select-generator state statem size (conj excluded-commands kind) (inc varindex))))))
         (gen/return [])))))
 
-(defn select-cmds
+(defn- select-cmds
   "A helper that simply returns a function that conforms to select-generator param.
 
   f must accept a map of all valid commands to take. Keys are keywords of the
@@ -539,10 +547,46 @@
   sequence if it has reached the size needed to generate.
   "
   [f]
-  (trace 'select-cmds
-    (fn select-generator [state statem possible-kw->cmd-gen]
-      (trace 'select-cmds-select-generator
-        (f possible-kw->cmd-gen)))))
+  (fn select-generator [state statem possible-kw->cmd-gen]
+    (trace 'select-cmds-select-generator
+      (f possible-kw->cmd-gen))))
+
+(def select-by-any
+  "A helper that simply returns a generator that picks commands randomly.
+
+  Note:
+
+    Based on how cmd-seq works, this frequency is affected by the constraints
+    which the command can be valid as defined by the state machine.
+
+  Example:
+
+    (cmd-seq statem {:select-generator select-by-any})
+  "
+  (select-cmds (comp gen/one-of vals)))
+
+(defn select-by-frequency
+  "A helper that simply returns a generator that picks commands based on a
+  probability map of the command keyword name to its likelihood.
+
+  The likelihood is determined by taking the value divided by the sum of all
+  likelihoods.
+
+  Note:
+
+    Based on how cmd-seq works, this frequency is affected by the constraints
+    which the command can be valid as defined by the state machine.
+
+  Example:
+
+    (cmd-seq statem {:select-generator (select-by-frequency {:new    1000
+                                                             :add    100
+                                                             :remove 10})})
+  "
+  [cmd-kw->count]
+  (select-cmds #(gen/frequency (mapv (fn [[k c]]
+                                       [(cmd-kw->count k) c])
+                                     %))))
 
 (defn cmd-seq
   "A generator that produces a random sequence of commands that conform to a
@@ -586,7 +630,7 @@
   ([statem]
    (cmd-seq statem nil))
   ([statem {:keys [select-generator size initial-state]
-            :or   {select-generator (select-cmds (comp gen/one-of vals))}
+            :or   {select-generator select-by-any}
             :as   options}]
    (trace 'cmd-seq
      (if size
@@ -664,25 +708,25 @@
     (defstatem queue-statem
       [mstate]
       (:new (assume [] (nil? mstate))
-            (given [] gen/pos-int)
+            (args [] gen/pos-int)
             (advance [v [_ n]] {:items    []
                                 :capacity n
                                 :ref      v}))
       (:enqueue (assume [] (and (not (nil? mstate))
                                 (< (count (mstate :items)) (mstate :capacity))))
-                (given [] [(gen/return (:ref mstate)) gen/int])
+                (args [] [(gen/return (:ref mstate)) gen/int])
                 (advance [v [_ _ n]] (update mstate :items conj n)))
       (:deque (assume [] (and (not (nil? mstate))
                               (pos? (count (mstate :items)))))
               (advance [_ _] (update mstate :items subvec 1))
-              (given [] (gen/return (:ref mstate)))
+              (args [] (gen/return (:ref mstate)))
               (verify [_ _ r] (= r (first (:items mstate))))))
 
     (for-all [cmds (cmd-seq queue-statem)]
              (:ok? (run-cmds queue-statem cmds queue-interpreter)))
   "
-  ([statem cmds interpreter] (run-cmds statem cmds interpreter nil))
-  ([statem cmds interpreter {:keys [initial-state]}]
+  ([^StateMachine statem cmds interpreter] (run-cmds statem cmds interpreter nil))
+  ([^StateMachine statem cmds interpreter {:keys [initial-state]}]
    (trace 'run-cmds
      (loop [rem-cmds  cmds
             mstate    initial-state
@@ -725,7 +769,7 @@
              "mstate:" (pr-str next-mstate))))
 (defn- debug-return [return-value]
   (when *debug-return-values*
-    (println "│   └ SUT-return:" (pr-str return-value))))
+    (println "│   └ returned:" (pr-str return-value))))
 (defn- debug-end [ret]
   (println "└" (if (:ok? ret)
                  "OK"
@@ -734,9 +778,9 @@
 
 (defn run-cmds-debug
   "Identical to `run-cmds`, but prints out data related to each command executed."
-  ([statem cmds interpreter]
+  ([^StateMachine statem cmds interpreter]
    (run-cmds-debug statem cmds interpreter nil))
-  ([statem cmds interpreter
+  ([^StateMachine statem cmds interpreter
     {:as   options
      :keys [initial-state
             mstate?

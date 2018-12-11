@@ -54,7 +54,7 @@
   (let [possible-commands (into {}
                                 (comp
                                  (filter #(statem/assume (second %) state))
-                                 (map #(vector (first %) (statem/given (second %) state))))
+                                 (map #(vector (first %) (statem/args (second %) state))))
                                 (apply dissoc (:commands statem) excluded-commands))]
     (if (pos? (count possible-commands))
       (gen/bind (select-generator statem state possible-commands)
@@ -78,7 +78,7 @@
 (defn cmd-seq
   ([statem] (cmd-seq statem nil))
   ([statem {:keys [select-generator size initial-state]
-            :or   {select-generator (statem/select-cmds (comp gen/one-of vals))}
+            :or   {select-generator statem/select-by-any}
             :as   options}]
    (if size
      (gen/shrink-2
