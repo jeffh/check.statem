@@ -92,24 +92,23 @@
   "
   ;; listed in order of first-invocation in a test run
   (assume [_ model-state]
-    "Used to assert if this command can be generated for the given state. Return
-    true if this command can be executed.
-
-    Implementing this provides optimization before generating command data.
-    Should be free of side effects.")
+    "Return true to indicate that this command can be executed based on the
+    current model state. Should be free of side effects.")
   (args [_ model-state]
-    "Returns a vector of generators to use as input arguments for the command.
+    "Returns a vector generator to use as input arguments for the command and
+    subsequent protocol functions below. The first argument of the vector must
+    be the command's keyword (eg - (gen/return :add)).
+
     Should be free of side effects.")
-  (only-when [_ model-state cmd-data]
-    "Used to assert if this command can be executed for the given state. Return
-    true if this command can be executed. Should be free of side effects.")
-  (advance [_ model-state var-sym cmd-data]
-    "Executes the command and returns the next state. Should be free of side
-    effects")
-  (verify [_ model-state previous-model-state cmd-data return-value]
-    "Asserts if the command is valid after state application. May cause side
-    effects on subject under test (sut). The value of model-state is after
-    calling advance."))
+  (only-when [_ model-state args]
+    "Return true to indicate that this command can be executed based on the
+     current model and generated arg data. Should be free of side effects.")
+  (advance [_ model-state var-sym args]
+    "Returns next model state from the given model state and its arguments.
+    Should be free of side effects.")
+  (verify [_ model-state previous-model-state args return-value]
+    "Asserts if the command is valid after state application. Should be free of
+    side effects."))
 
 (defrecord StateMachine [name commands cmd-metadatas])
 
@@ -129,7 +128,7 @@
    - all methods have default implementations if not specified:
      - `assume` returns true
      - `args` returns nil. AKA: (gen/tuple (gen/return command-name-kw))
-     - `only-when` calls through to `assume`
+     - `only-when` returns true
      - `advance` returns model-state it was given
      - `verify` returns true
 
@@ -185,17 +184,16 @@
         effects.
 
     (args [] ...)
-        Return either a vector of generators or a single generator of data
-        needed to execute this command. Subsequent functions will receive the
-        generated data as cmd-data. The generated data is prefixed with the
-        keyword of the command name.
+        Return a vector of generators of data needed to execute this command.
+        Subsequent functions will receive the generated data as cmd-data. The
+        generated data is prefixed with the keyword of the command name.
 
         Default implementation returns nil. Implementation must be free of side
         effects.
 
         For example:
 
-           (args [] gen/int) => [:command 1]
+           (args [] [gen/int]) => [:command 1]
 
     (only-when [cmd-data] ...)
         Return true if this command can be used for a given model state or
@@ -344,13 +342,12 @@
         cmd           (gensym "cmd__")
         value         (gensym "value__")
         default-impls {'assume    `(assume [] true)
-                       'only-when `(only-when [cmd-name#] (assume ~this ~mstate))
+                       'only-when `(only-when [cmd-name#] true)
                        'advance   `(advance [v# cmd-name#] ~model-state)
                        'args      `(args [] nil)
-                       'verify    `(verify [prev-mstate# cmd-name# return-value#] true)
-                       'tags      `(tags [prev-mstate# cmd-name# return-value#] [])}
+                       'verify    `(verify [prev-mstate# cmd-name# return-value#] true)}
         impls         (merge default-impls
-                             (into {} (map (juxt first identity) methods)))
+                             (into {} (map (juxt first identity)) methods))
         fill-impl     (fn [bindings sym]
                         (let [body   (impls sym)
                               inputs (second body)
@@ -358,7 +355,7 @@
                           `(let [~b           ~bindings
                                  ~model-state (first ~b)
                                  ~inputs      (vec (rest ~b))]
-                             ~@(rest body))))]
+                             ~@(rest (rest body)))))]
     (doseq [[n impl] default-impls
             :let     [expected-size (count (second impl))
                       actual-size (count (second (impls n)))]]
@@ -383,10 +380,7 @@
                            ~(fill-impl [mstate cmd] 'only-when))
                          (args [~this ~mstate]
                            (let [~model-state ~mstate
-                                 generators#  (do ~@(rest (impls 'args)))
-                                 generators#  (if (or (nil? generators#) (seq? generators#) (vector? generators#))
-                                                generators#
-                                                [generators#])]
+                                 generators#  (do ~@(rest (rest (impls 'args))))]
                              (apply gen/tuple (gen/return cn#) generators#)))
                          (advance [~this ~mstate ~value ~cmd]
                            ~(fill-impl [mstate value cmd] 'advance))
@@ -430,7 +424,7 @@
       (if (pos? (count allowed-indicies))
         (let [[kind :as cmd] (last (cmds (first allowed-indicies)))
               c              (statem-command statem kind)]
-          (if (only-when c state cmd)
+          (if (and (assume c state) (only-when c state cmd))
             (recur (advance c state (varsym varindex) cmd)
                    (rest allowed-indicies)
                    (inc varindex))

@@ -23,7 +23,7 @@
   "The contract for a queue with a max size"
   [mstate]
   (:new (assume [] (nil? mstate))
-        (args [] gen/pos-int)
+        (args [] [gen/pos-int])
         (advance [v [_ n]] {:items    []
                             :capacity n
                             :ref      v}))
@@ -34,7 +34,7 @@
   (:deque (assume [] (and (not (nil? mstate))
                           (pos? (count (mstate :items)))))
           (advance [_ _] (update mstate :items subvec 1))
-          (args [] (gen/return (:ref mstate)))
+          (args [] [(gen/return (:ref mstate))])
           (verify [prev-mstate _ r] (= r (first (:items prev-mstate))))))
 
 (deftype TestQueue [^:volatile-mutable items ^:volatile-mutable capacity]
@@ -136,16 +136,17 @@
      t)))
 
 (comment
-  (test.check.statem/statem-check! queue-statem)
+  (check.statem/statem-check! queue-statem)
   (map (comp first last) (gen/sample (cmd-seq queue-statem {:size 3})))
 
-  ;; --- no tracing
+  ;; --- no tracing, rounded to nearest 100ms, informal test runs
   ;; ~2400ms ;; first test
   ;; ~3500ms ;; fix shrinking, preserving var indicies
   ;; ~2700ms ;; vectorize varsyms, naive walk of generated form
   ;; ~2500ms ;; convert statemachine from map to defrecord with field access
   ;; ~1800ms ;; inline drop-seq-permutations into shrink-commands* transducer
-  (println (long (spec-timings #'test.check.statem-test/queue-program-generation-using-fair-distribution)) " ms")
-  (clojure.test/test-var #'test.check.statem-test/queue-program-generation-using-fair-distribution)
-  (test.check.statem/dump-trace)
+  ;; ~1700ms ;; (rest (rest impl)) for statem, vector-only args generator
+  (println (long (spec-timings #'check.statem-test/queue-program-generation-using-fair-distribution)) " ms")
+  (clojure.test/test-var #'check.statem-test/queue-program-generation-using-fair-distribution)
+  (check.statem/dump-trace)
   )
