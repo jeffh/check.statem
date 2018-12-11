@@ -95,37 +95,37 @@
                  (do (defstatem bad-statem [mstate]
                                 (:add (args [] gen/int)
                                       (verify [_ [a] _] true)))
-                     (statem-check! bad-statem))))
+                     (check! bad-statem))))
     (is (thrown? AssertionError
                  (do (defstatem bad-statem [mstate]
                                 (:add (args [] gen/int)
                                       (advance [_ [a]] true)))
-                     (statem-check! bad-statem))))
+                     (check! bad-statem))))
 
     (is (thrown? AssertionError
                  (do (defstatem bad-statem [mstate]
                                 (:add (args [] gen/int)
                                       (verify [_ [a] _] true)))
-                     (statem-check! bad-statem)))))
+                     (check! bad-statem)))))
 
   (testing "1-more arg in generator destructuring"
     (is (thrown? AssertionError
                  (do (defstatem bad-statem [mstate]
                                 (:add (args [] gen/int)
                                       (verify [_ [a b c] _] true)))
-                     (statem-check! bad-statem))))
+                     (check! bad-statem))))
 
     (is (thrown? AssertionError
                  (do (defstatem bad-statem [mstate]
                                 (:add (args [] gen/int)
                                       (advance [_ [a b c]] true)))
-                     (statem-check! bad-statem))))
+                     (check! bad-statem))))
 
     (is (thrown? AssertionError
                  (do (defstatem bad-statem [mstate]
                                 (:add (args [] gen/int)
                                       (verify [_ [a b c] _] true)))
-                     (statem-check! bad-statem))))))
+                     (check! bad-statem))))))
 
 (defn spec-timings [v]
   (let [t 10]
@@ -136,7 +136,7 @@
      t)))
 
 (comment
-  (check.statem/statem-check! queue-statem)
+  (check.statem/check! queue-statem)
   (map (comp first last) (gen/sample (cmd-seq queue-statem {:size 3})))
 
   ;; --- no tracing, rounded to nearest 100ms, informal test runs

@@ -21,7 +21,7 @@
     There are some useful helper functions that aid in building & debugging
     state machines:
 
-     - `statem-check!` run some sanity checks against the state machine
+     - `check!` run some sanity checks against the state machine
                        definition.
      - `run-cmds-debug` is a verbose printout of `run-cmds`.
   "
@@ -702,7 +702,7 @@
     (defstatem queue-statem
       [mstate]
       (:new (assume [] (nil? mstate))
-            (args [] gen/pos-int)
+            (args [] [gen/pos-int])
             (advance [v [_ n]] {:items    []
                                 :capacity n
                                 :ref      v}))
@@ -713,7 +713,7 @@
       (:deque (assume [] (and (not (nil? mstate))
                               (pos? (count (mstate :items)))))
               (advance [_ _] (update mstate :items subvec 1))
-              (args [] (gen/return (:ref mstate)))
+              (args [] [(gen/return (:ref mstate))])
               (verify [_ _ r] (= r (first (:items mstate))))))
 
     (for-all [cmds (cmd-seq queue-statem)]
@@ -817,7 +817,7 @@
        f))
    form))
 
-(defn statem-check!
+(defn check!
   "Performs validations against state machine. Useful for sanity-checking state
   machine definitions before attempting to use them.
 
