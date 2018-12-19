@@ -1,6 +1,6 @@
-(ns check.do-not-use.parallel-test
+(ns net.jeffhui.check.do-not-use.parallel-test
   (:require [clojure.test :refer :all]
-            [check.do-not-use.parallel :refer :all]
+            [net.jeffhui.check.do-not-use.parallel :refer :all]
             [clojure.test.check :as tc]
             [clojure.test.check.clojure-test :refer [defspec]]
             [clojure.test.check.generators :as gen]

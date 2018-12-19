@@ -1,6 +1,6 @@
-(ns check.statem-test
+(ns net.jeffhui.check.statem-test
   (:require [clojure.test :refer :all]
-            [check.statem :refer :all]
+            [net.jeffhui.check.statem :refer :all]
             [clojure.test.check :as tc]
             [clojure.test.check.clojure-test :refer [defspec]]
             [clojure.test.check.generators :as gen]

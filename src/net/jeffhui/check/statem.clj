@@ -1,4 +1,4 @@
-(ns check.statem
+(ns net.jeffhui.check.statem
   "Facilities for generating test programs using state machines.
 
   Allows defining specially annotated state machines that can be used as the

@@ -1,9 +1,9 @@
-(ns check.do-not-use.parallel
+(ns net.jeffhui.check.do-not-use.parallel
   "100% experimental. Expect nothing will be here tomorrow."
   (:require [clojure.test.check.generators :as gen]
             [clojure.test.check.random :as random]
             [clojure.test.check.rose-tree :as rose]
-            [check.statem :as statem])
+            [net.jeffhui.check.statem :as statem])
   (:import java.util.concurrent.Semaphore))
 
 ;; We acknowledge the evil of accessing a private var, but we need it
