@@ -1,0 +1,19 @@
+name: Clojure CI
+
+on: [push]
+
+jobs:
+  build:
+    name: Test on node ${{ matrix.node_version }} and ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest,  macOS-latest]
+
+    
+    steps:
+    - uses: actions/checkout@v1
+    - name: Install dependencies
+      run: lein deps
+    - name: Run tests
+      run: lein test
