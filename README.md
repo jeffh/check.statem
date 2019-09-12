@@ -2,10 +2,23 @@
 
 Facilities for generating test programs using state machines.
 
+For details about why this can be useful, check out the [talk by John Hughes](https://www.youtube.com/watch?v=zi0rHwfiX1Q). Unlike what John Hughes' demos, this library only supports serialized state machine testing (no parallel testing).
+
 ## Usage
 
+To install via lein:
 
-TODO
+```
+[net.jeffhui/check.statem "1.0.0"]
+```
+
+Or clojure deps:
+
+```
+{:deps {net.jeffhui/check.statem {:mvn/version "1.0.0"}}}
+```
+
+## Example
 
 ```clojure
 (require '[check.statem :refer [defstatem cmd-seq run-cmds]])
@@ -15,7 +28,7 @@ TODO
   (^void enqueue [item])
   (dequeue []))
 
-;; our code we're testing
+; our code we're testing
 (deftype TestQueue [^:volatile-mutable items ^:volatile-mutable capacity]
   IQueue
   (enqueue [this item]
