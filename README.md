@@ -9,13 +9,13 @@ For details about why this can be useful, check out the [talk by John Hughes](ht
 To install via lein:
 
 ```
-[net.jeffhui/check.statem "1.0.0"]
+[net.jeffhui/check.statem "1.0.0-SNAPSHOT"]
 ```
 
 Or clojure deps:
 
 ```
-{:deps {net.jeffhui/check.statem {:mvn/version "1.0.0"}}}
+{:deps {net.jeffhui/check.statem {:mvn/version "1.0.0-SNAPSHOT"}}}
 ```
 
 ## Example
@@ -68,6 +68,6 @@ Or clojure deps:
 
 ## License
 
-Copyright © 2018 Jeff Hui
+Copyright © 2019 Jeff Hui
 
 Distributed under the Eclipse Public License version 1.0.
