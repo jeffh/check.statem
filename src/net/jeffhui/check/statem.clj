@@ -21,8 +21,7 @@
     There are some useful helper functions that aid in building & debugging
     state machines:
 
-     - `check!` run some sanity checks against the state machine
-                       definition.
+     - `check!` run some sanity checks against the state machine definition.
      - `run-cmds-debug` is a verbose printout of `run-cmds`.
   "
   (:require [clojure.set :as set]
@@ -123,7 +122,7 @@
   This macro provides syntactic sugar to creating a map that represents a state
   machine with Commands.
 
-   - all methods imply model-state and this via the 4th argument
+   - all methods imply model-state and this via the 3rd argument
    - generate's body will wrap (gen/tuple (gen/return command-name-kw) ...)
    - all methods have default implementations if not specified:
      - `assume` returns true
@@ -146,12 +145,12 @@
 
       ;; define commands for the state machine
       (:enqueue (args [] gen/any-printable)
-                (advance [[_ item]] ((fnil conj []) mstate item))
-                (verify [prev-mstate [_ item] ret] (.add sut item)))
+                (advance [_ [_ item]] ((fnil conj []) mstate item))
+                (verify [prev-mstate [_ item] ret] ret))
 
       (:dequeue (assume [] (pos? (count mstate)))
-                (advance [_] (subvec mstate 1))
-                (verify [_ _ ret] (= (.dequeue sut) (first mstate)))))
+                (advance [_ _] (subvec mstate 1))
+                (verify [_ _ ret] (= ret (first mstate)))))
 
   Implied parameters:
 
@@ -164,7 +163,7 @@
         (:enqueue (assume [this model-state])
                   (args [this model-state])
                   (only-when [this model-state cmd-data])
-                  (advance [this model-state cmd-data])
+                  (advance [this model-state var-sym cmd-data])
                   (verify [this model-state prev-mstate cmd-data return-value])))
 
     Here's the following implied parameters:
@@ -771,7 +770,31 @@
   ret)
 
 (defn run-cmds-debug
-  "Identical to `run-cmds`, but prints out data related to each command executed."
+  "Identical to `run-cmds`, but prints out data related to each command executed.
+
+  Parameters:
+
+    `statem` (required, StateMachine)
+      The state machine needed to verify behavior against.
+
+    `cmds` (required, seq of symbolic commands)
+      The sequence of commands to execute against the subject under test.
+
+    `interpreter` (required, fn[2-args])
+      The interface to interacting with the subject under test. See 'Interpreter'
+      section below.
+
+    `inital-state` (optional, anything valid for StateMachine's model state)
+      The initial state machine state. Should be the same as the one given to
+      `cmd-seq`.
+
+    `mstate?` (optional, bool)
+      If true, print out the model state after each command. Defaults to false.
+
+    `return-value?` (optiona, bool)
+      If true, print out the return value for `verify` after each command.
+      Defaults to false.
+  "
   ([^StateMachine statem cmds interpreter]
    (run-cmds-debug statem cmds interpreter nil))
   ([^StateMachine statem cmds interpreter
