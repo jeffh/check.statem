@@ -10,6 +10,15 @@
 
   API OVERVIEW
 
+    The goal for state machine testing is to define the following:
+
+     - A 'model' state machine (using `defstatem`). The model state machine
+       defines the expected state machine behavior.
+     - A interpreter function (adapter between `defstatem` and an
+       implementation). This function reads model state transitions and performs the
+       appropriate behavior in an implementation.
+     - The implementation (the subject under test)
+
     The most important functions you need to understand are:
 
      - `defstatem` for defining state machines.
@@ -44,7 +53,7 @@
              s# (System/nanoTime)
              r# (do ~@body)
              e# (System/nanoTime)]
-         (swap! stats update n# (fnil conj []) (- e# s#))
+         (send stats update n# (fnil conj []) (- e# s#))
          r#))
 
     (defn dump-trace []
@@ -52,11 +61,12 @@
                     (map (fn [[k vs]]
                            (let [times vs
                                  s     (reduce + 0 times)]
-                             {:name k
-                              :min  (apply min times)
-                              :max  (apply max times)
-                              :sum  s
-                              :avg  (double (/ s (count vs)))}))
+                             {:name  k
+                              :min   (apply min times)
+                              :max   (apply max times)
+                              :sum   s
+                              :count (count times)
+                              :avg   (int (double (/ s (count vs))))}))
                          @stats))]
         (pprint/print-table (reverse (sort-by :sum s))))))
 
@@ -89,6 +99,7 @@
   If you're implementing these functions from `defstatem` is that the first two
   arguments (`_` and `model-state`) are assumed for brevity.
   "
+  :extend-via-metadata true
   ;; listed in order of first-invocation in a test run
   (assume [_ model-state]
     "Return true to indicate that this command can be executed based on the
@@ -397,16 +408,16 @@
 ;; but using a tuple (aka vector) is much faster to operate with instead of having to parse
 (defn- varsym? [v]
   (and (vector? v)
-       (= :statem/var (first v))))
+       (= :var (v 0))))
 (defn- varsym [i]
   (trace 'varsym
-    [:statem/var i]
+    [:var i]
     #_
     (symbol (str "var-" i))))
-(defn- varsym-offset [var]
+(defn- varsym-offset [v]
   (trace 'varsym-offset
-    (when (varsym? var)
-      (second var))
+    (when (varsym? v)
+      (v 1))
     #_
     (try
       (Integer/parseInt
@@ -617,8 +628,41 @@
     (for-all [cmds (cmd-seq queue-statem)]
       (:ok? (run-cmds queue-statem cmds queue-interpreter)))
 
-  For a more thorough example, check out `run-cmds`.
+    For a more thorough example, check out `run-cmds`.
 
+  Generated Values:
+
+    **An opaque value to pass to `run-cmds`. The structure may change in the
+    future.**
+
+    Technically, returns a sequence of commands are in single-assignment
+    statement form:
+
+      [
+        [:set [:var 1] ...]
+        [:set [:var 2] ...]
+        [:set [:var 3] ...]
+        ...
+      ]
+
+    Where [:var N] is a return value from running a given statement. This is
+    abstract representation akin to this in Clojure:
+
+      (do
+        (def var1 ...)
+        (def var2 ...)
+        (def var3 ...)
+        ...)
+
+    The data structure returned is a format that is intended:
+
+      - To be somewhat human readable (since test.check prints this)
+      - To have enough the data to be used for shrinking commands
+      - To be fast at generated. State machine generation can be slow for large state machines.
+
+    For the last reason, this is the reason why the format should be considered
+    opaque. It may be useful for inspecting, but it should be considered 'no
+    warranty' behavior for depending on this result, say in a library.
   "
   ([statem]
    (cmd-seq statem nil))
@@ -684,10 +728,19 @@
   Interpreter:
 
     :: (fn interpreter [cmd run-cmds-ctx])
+       where
+         cmd          :: [cmd-type & generated-cmd-args]
+         run-cmds-ctx :: {:keys [var-sym var-table]}
+         var-sym      :: VariableSymbol # opaque key for var-table
+         var-table    :: {VariableSymbol value}
 
     Interpreter receives every command to execute and is expected to run against
     the subject under test. The return value of interpreter is the `return-value`
     used in the state machine's `verify` method.
+
+    This function bridges the model state machine with a concrete implementation.
+    Having this interpreter function also keeps the model state machines free
+    from directly comparing to a specific imlementation.
 
   Example:
 

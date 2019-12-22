@@ -136,8 +136,10 @@
      t)))
 
 (comment
-  (check.statem/check! queue-statem)
-  (map (comp first last) (gen/sample (cmd-seq queue-statem {:size 3})))
+  (check! queue-statem)
+  (clojure.pprint/pprint
+   (last
+    (gen/sample (cmd-seq queue-statem {:size 3}))))
 
   ;; --- no tracing, rounded to nearest 100ms, informal test runs
   ;; ~2400ms ;; first test
@@ -146,7 +148,7 @@
   ;; ~2500ms ;; convert statemachine from map to defrecord with field access
   ;; ~1800ms ;; inline drop-seq-permutations into shrink-commands* transducer
   ;; ~1700ms ;; (rest (rest impl)) for statem, vector-only args generator
-  (println (long (spec-timings #'check.statem-test/queue-program-generation-using-fair-distribution)) " ms")
-  (clojure.test/test-var #'check.statem-test/queue-program-generation-using-fair-distribution)
-  (check.statem/dump-trace)
+  (println (long (spec-timings #'net.jeffhui.check.statem-test/queue-program-generation-using-fair-distribution)) " ms")
+  (clojure.test/test-var #'net.jeffhui.check.statem-test/queue-program-generation-using-fair-distribution)
+  (net.jeffhui.check.statem/dump-trace)
   )
