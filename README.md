@@ -8,13 +8,13 @@ For details about why this can be useful, check out the [talk by John Hughes](ht
 
 To install via lein:
 
-```
+```clojure
 [net.jeffhui/check.statem "1.0.0-SNAPSHOT"]
 ```
 
 Or clojure deps:
 
-```
+```clojure
 {:deps {net.jeffhui/check.statem {:mvn/version "1.0.0-SNAPSHOT"}}}
 ```
 
