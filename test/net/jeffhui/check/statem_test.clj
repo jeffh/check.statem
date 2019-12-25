@@ -1,6 +1,6 @@
 (ns net.jeffhui.check.statem-test
-  (:require [clojure.test :refer :all]
-            [net.jeffhui.check.statem :refer :all]
+  (:require [clojure.test :refer [testing deftest is]]
+            [net.jeffhui.check.statem :refer [defstatem cmd-seq run-cmds run-cmds-debug select-by-frequency check!]]
             [clojure.test.check :as tc]
             [clojure.test.check.clojure-test :refer [defspec]]
             [clojure.test.check.generators :as gen]
@@ -88,6 +88,11 @@
   (is (macroexpand-thrown? `(defstatem bad-statem [mstate] (:add (~'verify [~'_ ~'_ ~'_ ~'_])))))
   (is (macroexpand-thrown? `(defstatem bad-statem [mstate] (:add (~'blah [])))))
   (is (macroexpand-thrown? `(defstatem bad-statem [mstate this extra]))))
+
+(deftest run-cmds-asserts-against-poor-copy-from-test-check-test-results
+  (is (thrown? IllegalArgumentException
+               (run-cmds queue-statem [[[:set [:var 1] [:new 2]]]]) queue-runner))
+  (is (run-cmds queue-statem [[:set [:var 1] [:new 2]]] queue-runner)))
 
 (deftest statem-check-rules
   (testing "1-less arg in generator destructuring"

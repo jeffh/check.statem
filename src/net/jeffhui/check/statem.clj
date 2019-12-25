@@ -73,15 +73,27 @@
   (defmacro ^{:style/indent 1} trace [name & body]
     `(do ~@body)))
 
+
+(defmacro ^{:private true} assert-args
+  [& pairs]
+  `(do (when-not ~(first pairs)
+         (throw (IllegalArgumentException.
+                 (str (first ~'&form) " requires " ~(second pairs) " in " ~'*ns* ":" (:line (meta ~'&form))))))
+       ~(let [more (nnext pairs)]
+          (when more
+            (list* `assert-args more)))))
+
 ;; Implementation detail:
 ;; It is strongly recommended to use the defstatem macro instead to generate
 ;; conformance to this interface
 (defprotocol Command
-  "Command interface. NOTE: It's recommended to use `defstatem` and/or
-  `defcommand` instead of implementing this protocol directly.
+  "Command interface. NOTE: It's recommended to use [[defstatem]] and/or
+  [[defcommand]] instead of implementing this protocol directly.
+  Advanced-usage only.
 
-  Command represents an 'action' or transition that can be taken by a state
-  machine. These transitions requires several bits of metadata:
+  Command (aka - State Transition) represents an 'action' or transition that can
+  be taken by a state machine. These transitions requires several bits of
+  metadata:
 
    1. When is calling this command valid?
    2. What data does this command require besides the current state?
@@ -113,7 +125,7 @@
   (only-when [_ model-state args]
     "Return true to indicate that this command can be executed based on the
      current model and generated arg data. Should be free of side effects.")
-  (advance [_ model-state var-sym args]
+  (advance [_ model-state return-sym args]
     "Returns next model state from the given model state and its arguments.
     Should be free of side effects.")
   (verify [_ model-state previous-model-state args return-value]
@@ -219,7 +231,7 @@
           `cmd-data` refers to the generated command data from `args`.
 
 
-    (advance [var-sym cmd-data] ...)
+    (advance [ret-sym cmd-data] ...)
         Return the next model state from executing this command. var-sym
         represents the symbolic value of the return value of from calling
         subject-under-test (but not yet realized).
@@ -231,9 +243,11 @@
 
           `model-state` is the model state that is used for all commands. See
                         'Implied parameters' section above.
-          `var-sym` a opaque value that represents a reference of the return
+          `ret-sym` a opaque value that represents a reference of the return
                     value. Alternatively said, this is a symbolic representation
-                    of the subject under test's return value
+                    of the subject under test's return value. This may be useful
+                    to reference usage of a return value for testing /
+                    interpreter usage.
           `cmd-data` refers to the generated command data from `args`.
 
     (verify [prev-mstate cmd-data return-value] ...)
@@ -280,9 +294,12 @@
                                                     (into [nil] commands))
         [global-bindings & commands :as cmd-list] commands]
     (when (seq? cmd-list)
-      (assert (vector? global-bindings))
-      (assert (<= (count global-bindings) 2)))
-    (assert (or (nil? docstring) (string? docstring)))
+      (assert-args
+       (vector? global-bindings)
+       "missing or incorrect type of global bindings"
+
+       (<= (count global-bindings) 2)
+       "only first two args of global-bindings vector has any meaning."))
     `(do
        (def ~table-name
          ~@(when docstring [docstring])
@@ -300,7 +317,7 @@
 
 (defn statem-command [^StateMachine statem command-name]
   (trace 'statem-command
-    (assert statem (str "State machine not defined: %s" (pr-str statem)))
+    (assert statem "State machine cannot be nil")
     (or (get (.commands statem) command-name)
         (throw (IllegalArgumentException. (format "Failed to find command (%s) for state machine (%s)"
                                                   (pr-str command-name)
@@ -311,8 +328,8 @@
   defcommand
   "Provides an simplified way to define commands for the statem.
 
-  You probably want to use `defstatem` instead of this macro directly.
-  `defcommand` allows you to structure your state machine more like
+  You probably want to use [[defstatem]] instead of this macro directly.
+  [[defcommand]] allows you to structure your state machine more like
   multimethods.
 
   Simply is sugar for (alter-var-root state-machine assoc-in ... (reify Command
@@ -331,21 +348,22 @@
 
     (defstatem set-statem [mstate]
       (:add (args [] [gen/any-printable])
-            (advance [[_ value]] (conj (set mstate) value))))
+            (advance [_ [_ value]] (conj (set mstate) value))))
 
   "
   [table-name cmd-name [model-state this :as shared-bindings] & methods]
-  (assert (vector? shared-bindings))
-  (assert (<= (count shared-bindings) 2))
-  (assert (every? seq? methods))
+  (assert-args
+   (vector? shared-bindings) "shared bindings must be a vector of [mstate this]"
+   (<= (count shared-bindings) 2) "shared bindings only has at most 2 arguments [mstate this]"
+   (every? seq? methods) "all methods are sequences")
   (let [allowed-methods      '#{assume only-when advance args verify}
         unrecognized-methods (set/difference (set (map first methods))
                                              allowed-methods)]
-    (assert (empty? unrecognized-methods)
-            (format "Expected to only have the following methods defined (%s), but have (%s)"
-                    (string/join ", " (map pr-str allowed-methods))
-                    (string/join ", " (map pr-str unrecognized-methods)))))
-  (assert (set (map first methods)))
+    (assert-args (empty? unrecognized-methods)
+                 (format "Expected to only have the following methods defined (%s), but have (%s)"
+                         (string/join ", " (map pr-str allowed-methods))
+                         (string/join ", " (map pr-str unrecognized-methods)))))
+  (assert-args (set (map first methods)) "a method must be defined")
   (let [this          (or this (gensym "this__"))
         mstate        (gensym "mstate__")
         prev-mstate   (gensym "prev-mstate__")
@@ -369,13 +387,14 @@
     (doseq [[n impl] default-impls
             :let     [expected-size (count (second impl))
                       actual-size (count (second (impls n)))]]
-      (assert (= expected-size actual-size)
-              (format "Expected command [%s %s %s] implementation to have %d input parameters, got %d."
-                      table-name
-                      cmd-name
-                      (name n)
-                      expected-size
-                      actual-size)))
+      (assert-args
+       (= expected-size actual-size)
+       (format "Expected command [%s %s %s] implementation to have %d input parameters, got %d."
+               table-name
+               cmd-name
+               (name n)
+               expected-size
+               actual-size)))
     `(let [cn# ~cmd-name]
        (alter-var-root (var ~table-name)
                        assoc-in [:cmd-metadatas cn#]
@@ -628,12 +647,12 @@
     (for-all [cmds (cmd-seq queue-statem)]
       (:ok? (run-cmds queue-statem cmds queue-interpreter)))
 
-    For a more thorough example, check out `run-cmds`.
+    For a more thorough example, check out [[run-cmds]].
 
   Generated Values:
 
-    **An opaque value to pass to `run-cmds`. The structure may change in the
-    future.**
+    **An opaque value to pass to [[run-cmds]]. The structure may change in the
+    SNAPSHOT versions.**
 
     Technically, returns a sequence of commands are in single-assignment
     statement form:
@@ -703,6 +722,26 @@
              false))
          true)))))
 
+(defn catch-interpreter
+  "Wraps an interpreter function that provides try-catch error behavior that run-cmds expects.
+
+  Using this decorator is equivalent to passing {:catch? true} to run-cmds.
+  "
+  [interpreter]
+  (fn catch-interpreter-runner [& args]
+    (try
+      (apply interpreter args)
+      (catch Exception e
+        (ex-info "Uncaught exception"
+                 {::fail-fast true
+                  :exception   e
+                  :interpreter interpreter
+                  :args        args}
+                 e)))))
+
+(defn- error? [e]
+  (boolean (::fail-fast (ex-data e))))
+
 (defn run-cmds
   "Executes the symbolic representation of a sequence of commands using an interpreter.
 
@@ -715,7 +754,8 @@
       The state machine needed to verify behavior against.
 
     `cmds` (required, seq of symbolic commands)
-      The sequence of commands to execute against the subject under test.
+      The sequence of commands to execute against the subject under test. This
+      should be generated from [[cmd-seq]].
 
     `interpreter` (required, fn[2-args])
       The interface to interacting with the subject under test. See 'Interpreter'
@@ -723,7 +763,12 @@
 
     `inital-state` (optional, anything valid for StateMachine's model state)
       The initial state machine state. Should be the same as the one given to
-      `cmd-seq`.
+      [[cmd-seq]].
+
+    `catch?` (optional, bool)
+      Should this runner attempt to catch exceptions? Catching exceptions allows
+      the runner to minimize the failure, but may lose the original stacktrace.
+      Defaults to true.
 
   Interpreter:
 
@@ -772,31 +817,39 @@
              (:ok? (run-cmds queue-statem cmds queue-interpreter)))
   "
   ([^StateMachine statem cmds interpreter] (run-cmds statem cmds interpreter nil))
-  ([^StateMachine statem cmds interpreter {:keys [initial-state]}]
+  ([^StateMachine statem cmds interpreter {:keys [initial-state catch?]
+                                           :or   {catch? true}}]
    (trace 'run-cmds
-     (loop [rem-cmds  cmds
-            mstate    initial-state
-            var-table {}]
-       (if (pos? (count rem-cmds))
-         (let [[_ v [kind :as cmd]] (first rem-cmds)
-               c                    (statem-command statem kind)
-               next-mstate          (advance c mstate v cmd)
-               return-value         (interpreter cmd {:var-sym   v
-                                                      :var-table var-table})]
-           (if (verify c next-mstate mstate cmd return-value)
-             (recur (rest rem-cmds)
-                    next-mstate
-                    (if (nil? return-value)
-                      var-table
-                      (assoc var-table v return-value)))
-             {:ok?          false
-              :cmds         cmds
-              :statem       statem
-              :vars         var-table
-              :model-state  mstate
-              :return-value return-value
-              :cmd          cmd}))
-         {:ok? true})))))
+     (assert (and (seqable? cmds)
+                  (vector? (first cmds))
+                  (keyword (ffirst cmds)))
+             "Invalid commands. Did you mean to remove one level of nesting from test results?")
+     (let [interpreter (if catch?
+                         (catch-interpreter interpreter)
+                         interpreter)]
+       (loop [rem-cmds  cmds
+              mstate    initial-state
+              var-table {}]
+         (if (pos? (count rem-cmds))
+           (let [[_ v [kind :as cmd]] (first rem-cmds)
+                 c                    (statem-command statem kind)
+                 next-mstate          (advance c mstate v cmd)
+                 return-value         (interpreter cmd {:var-sym   v
+                                                        :var-table var-table})]
+             (if (and (not (error? return-value))
+                      (verify c next-mstate mstate cmd return-value))
+               (recur (rest rem-cmds)
+                      next-mstate
+                      (if (nil? return-value)
+                        var-table
+                        (assoc var-table v return-value)))
+               {:ok?          false
+                :cmds         cmds
+                :vars         var-table
+                :model-state  mstate
+                :return-value return-value
+                :cmd          cmd}))
+           {:ok? true}))))))
 
 (def ^:private ^:dynamic *debug-statem* false)
 (def ^:private ^:dynamic *debug-return-values* false)
@@ -823,7 +876,7 @@
   ret)
 
 (defn run-cmds-debug
-  "Identical to `run-cmds`, but prints out data related to each command executed.
+  "Identical to [[run-cmds]], but prints out data related to each command executed.
 
   Parameters:
 
@@ -846,7 +899,12 @@
 
     `return-value?` (optiona, bool)
       If true, print out the return value for `verify` after each command.
-      Defaults to false.
+      Defaults to true.
+
+    `catch?` (optional, bool)
+      Should this runner attempt to catch exceptions? Catching exceptions allows
+      the runner to minimize the failure, but may lose the original stacktrace.
+      Defaults to true.
   "
   ([^StateMachine statem cmds interpreter]
    (run-cmds-debug statem cmds interpreter nil))
@@ -854,36 +912,42 @@
     {:as   options
      :keys [initial-state
             mstate?
-            return-value?]}]
-   (binding [*debug-statem* mstate?
-             *debug-return-values* return-value?]
-     (debug-start cmds nil)
-     (debug-end
-      (loop [rem-cmds  cmds
-             mstate    initial-state
-             var-table {}]
-        (if (pos? (count rem-cmds))
-          (let [[_ v [kind :as cmd] :as stmt] (first rem-cmds)
-                c                             (statem-command statem kind)
-                next-mstate                   (advance c mstate v cmd)
-                _                             (debug-step stmt mstate next-mstate var-table)
-                return-value                  (interpreter cmd {:var-sym   v
-                                                                :var-table var-table})
-                _                             (debug-return return-value)]
-            (if (verify c next-mstate mstate cmd return-value)
-              (recur (rest rem-cmds)
-                     next-mstate
-                     (if (nil? return-value)
-                       var-table
-                       (assoc var-table v return-value)))
-              {:ok?          false
-               :cmds         cmds
-               :statem       statem
-               :vars         var-table
-               :model-state  mstate
-               :return-value return-value
-               :cmd          cmd}))
-          {:ok? true}))))))
+            return-value?
+            catch?]
+     :or   {return-value? true
+            catch?        true}}]
+   (let [interpreter (if catch?
+                       (catch-interpreter interpreter)
+                       interpreter)]
+     (binding [*debug-statem*        mstate?
+               *debug-return-values* return-value?]
+       (debug-start cmds nil)
+       (debug-end
+        (loop [rem-cmds  cmds
+               mstate    initial-state
+               var-table {}]
+          (if (pos? (count rem-cmds))
+            (let [[_ v [kind :as cmd] :as stmt] (first rem-cmds)
+                  c                             (statem-command statem kind)
+                  next-mstate                   (advance c mstate v cmd)
+                  _                             (debug-step stmt mstate next-mstate var-table)
+                  return-value                  (interpreter cmd {:var-sym   v
+                                                                  :var-table var-table})
+                  _                             (debug-return return-value)]
+              (if (and (not (error? return-value))
+                       (verify c next-mstate mstate cmd return-value))
+                (recur (rest rem-cmds)
+                       next-mstate
+                       (if (nil? return-value)
+                         var-table
+                         (assoc var-table v return-value)))
+                {:ok?          false
+                 :cmds         cmds
+                 :vars         var-table
+                 :model-state  mstate
+                 :return-value return-value
+                 :cmd          cmd}))
+            {:ok? true})))))))
 
 (defn- denamespace-syms [form]
   (walk/postwalk
