@@ -1,6 +1,6 @@
 (ns net.jeffhui.check.statem-test
   (:require [clojure.test :refer [testing deftest is]]
-            [net.jeffhui.check.statem :refer [defstatem cmd-seq run-cmds run-cmds-debug select-by-frequency check!]]
+            [net.jeffhui.check.statem :as statem :refer [defstatem cmd-seq run-cmds run-cmds-debug select-by-frequency check!]]
             [clojure.test.check :as tc]
             [clojure.test.check.clojure-test :refer [defspec]]
             [clojure.test.check.generators :as gen]
@@ -51,6 +51,12 @@
     :new     (TestQueue. [] (second cmd))
     :enqueue (.enqueue ^IQueue (var-table (second cmd)) (nth cmd 2))
     :deque   (.dequeue ^IQueue (var-table (second cmd)))))
+
+(deftest reading-commands
+  (is (statem/lookup-command queue-statem :new))
+  (is (statem/lookup-command queue-statem :enqueue))
+  (is (statem/lookup-command queue-statem :deque))
+  (is (= #{:new :enqueue :deque} (set (statem/list-commands queue-statem)))))
 
 (defspec queue-program-generation-using-fair-distribution 100
   (for-all [cmds (cmd-seq queue-statem)]

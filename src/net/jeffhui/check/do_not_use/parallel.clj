@@ -1,4 +1,4 @@
-(ns net.jeffhui.check.do-not-use.parallel
+(ns ^:no-doc net.jeffhui.check.do-not-use.parallel
   "100% experimental. Expect nothing will be here tomorrow."
   (:require [clojure.test.check.generators :as gen]
             [clojure.test.check.random :as random]
@@ -61,12 +61,12 @@
                 (fn [[kind & data :as cmd]]
                   (if (nil? cmd)
                     (gen/return [])
-                    (if (statem/only-when (#'statem/statem-command statem kind) state cmd)
+                    (if (statem/only-when (statem/lookup-command statem kind) state cmd)
                       (if (pos? size)
                         (gen/fmap
                          (partial into [(#'statem/assignment-statement varindex cmd)])
                          (cmd-state-seq select-generator
-                                        (statem/advance (#'statem/statem-command statem kind) state (#'statem/varsym varindex) cmd)
+                                        (statem/advance (statem/lookup-command statem kind) state (#'statem/varsym varindex) cmd)
                                         statem
                                         (dec size)
                                         #{}
