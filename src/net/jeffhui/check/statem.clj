@@ -43,7 +43,7 @@
             [clojure.test.check.random :as random :refer [make-random]]
             [clojure.test.check.rose-tree :as rose]
             [clojure.walk :as walk]
-            [net.jeffhui.check.statem.internal :refer [trace]]))
+            [net.jeffhui.check.statem.internal :as internal :refer [trace]]))
 
 (defmacro ^{:private true} assert-args
   [& pairs]
@@ -116,15 +116,6 @@
   This macro provides syntactic sugar to creating a map that represents a state
   machine with Commands.
 
-   - all methods imply model-state and this via the 3rd argument
-   - generate's body will wrap (gen/tuple (gen/return command-name-kw) ...)
-   - all methods have default implementations if not specified:
-     - `assume` returns true
-     - `args` returns nil. AKA: (gen/tuple (gen/return command-name-kw))
-     - `only-when` returns true
-     - `advance` returns model-state it was given
-     - `verify` returns true
-
   If you have a large state machine, you can break the state machine definition
   into several forms by using `defcommand` directly. Although, it may be more
   indicative of a bigger problem if your state machine has a lot of commands
@@ -139,12 +130,12 @@
 
         ;; define commands for the state machine
         (:enqueue (args [] gen/any-printable)
-                  (advance [_ [_ item]] ((fnil conj []) mstate item))
-                  (verify [prev-mstate [_ item] ret] ret))
+                  (advance [return-sym [cmd-name item]] ((fnil conj []) mstate item))
+                  (verify [prev-mstate [cmd-name item] ret] ret))
 
         (:dequeue (assume [] (pos? (count mstate)))
                   (advance [_ _] (subvec mstate 1))
-                  (verify [_ _ ret] (= ret (first mstate)))))
+                  (verify [_ _ return-value] (= return-value (first mstate)))))
 
   **Implied parameters:**
 
@@ -166,7 +157,7 @@
     - `this` represents the command itself. Can be optionally elided.
 
 
-  Command Methods:
+  **Command Methods:**
 
   - `(assume [] ...)`
        Return true if this command can be used for a given the model state. If
@@ -185,7 +176,7 @@
 
         For example:
 
-            (args [] [gen/int]) => [:command 1]
+            (args [] [gen/int]) ;; => [:command-name 1]
   - `(only-when [cmd-data] ...)`
         Return true if this command can be used for a given model state or
         generated command data.
@@ -236,22 +227,32 @@
   **Notes:**
 
     State machine definitions are entirely abstract - meaning there is no
-    direct dependency on how any particular implementation that a production
-    implementation may have. To perform that comparison, use a function like
-    `run-cmds` with some integration code. This allows state machine definitions
-    to be shared or reused against other production implementations.
+    external side effects that a production implementation may have. To perform
+    that comparison, use a function like `run-cmds` with some integration code.
+    This allows state machine definitions to be shared or reused against other
+    production implementations.
+
+    Other details of this macro:
+
+    - args's body will wrap `(gen/tuple (gen/return command-name-kw) ...)`
+    - all methods have default implementations if not specified
+        - `assume` returns `true`
+        - `args` returns `nil`. AKA: `(gen/tuple (gen/return command-name-kw))`
+        - `only-when` returns `true`
+        - `advance` returns `model-state` it was given
+        - `verify` returns `true`
 
   **Large State Machines:**
 
     If you have a large state machine, it may be better to break it up into
     multiple smaller ones to test. Smaller state machines allow test.check to
     generate more of the possible program space within a typical test generation
-    (eg - 100).
+    (100 commands is test.checks' default size maximum).
 
     Alternatively, you can choose to generate commands with a skewed probability
     of generating specific events. It's probably not as good of a solution to
     breaking up the state machine, but can provide a more focused exploration of
-    specific kind of program generations.
+    specific kinds of program generations.
 
   "
   [table-name & commands]
@@ -269,27 +270,41 @@
     `(do
        (def ~table-name
          ~@(when docstring [docstring])
-         (map->StateMachine
-          {:name          ~(name table-name)
-           :commands      {}
-           :cmd-metadatas {}}))
+         (->StateMachine ~(name table-name) {} {}))
        ~@(map (fn [c] `(defcommand ~table-name ~(first c) ~global-bindings ~@(rest c))) commands)
        (var ~table-name))))
 
 (defn list-commands
-  "Returns a sequence of keywords indicating available command names for the state machine."
+  "Returns a sequence of keywords indicating available command names for the state machine.
+
+  **Example:**
+
+      (list-commands queue-statem)
+      ;; => [:new :enqueue :dequeue]
+  "
   [^StateMachine statem]
   (keys (.commands statem)))
 
 (defn lookup-command
-  "Returns a command that that matches a given interface."
-  [^StateMachine statem command-name]
-  (trace 'lookup-command
-    (assert statem "State machine cannot be nil")
-    (or (get (.commands statem) command-name)
-        (throw (IllegalArgumentException. (format "Failed to find command (%s) for state machine (%s)"
-                                                  (pr-str command-name)
-                                                  (pr-str (.name statem))))))))
+  "Returns a command that that matches a given interface. Throws if the command
+  does not exist unless a default value is given.
+
+  **Example:**
+
+      (lookup-command queue-statem :new)
+      ;; => <instance conforming to Command>
+  "
+  ([^StateMachine statem command-name]
+   (trace 'lookup-command
+          (assert statem "State machine cannot be nil")
+          (or (get (.commands statem) command-name)
+              (throw (IllegalArgumentException. (format "Failed to find command (%s) for state machine (%s)"
+                                                        (pr-str command-name)
+                                                        (pr-str (.name statem))))))))
+  ([^StateMachine statem command-name default-value]
+   (trace 'lookup-command
+          (assert statem "State machine cannot be nil")
+          (get (.commands statem) command-name default-value))))
 
 (defmacro
   ^{:style/indent [3 :form :form [1]]}
@@ -303,20 +318,26 @@
   Simply is sugar for `(alter-var-root state-machine assoc-in ... (reify Command ...))`
   to save typing and some boilerplate in the following ways:
 
-   - all methods imply model-state and this via the 4th argument
+   - all methods imply model-state and this via the 3rd argument
    - args's body will wrap `(gen/tuple (gen/return command-name-kw) ...)`
    - all methods have default implementations if not specified:
-     - `assume` returns true
-     - `only-when` calls through to `assume`
-     - `advance` returns model-state it was given
-     - `args` returns nil. AKA: `(gen/tuple (gen/return command-name-kw))`
-     - `verify` returns true
+       - `assume` returns `true`
+       - `only-when` returns `true`
+       - `advance` returns `model-state` it was given
+       - `args` returns `nil`. AKA: `(gen/tuple (gen/return command-name-kw))`
+       - `verify` returns `true`
 
-  Example:
+  **Example:**
 
-      (defstatem set-statem [mstate]
-        (:add (args [] [gen/any-printable])
-              (advance [_ [_ value]] (conj (set mstate) value))))
+      (defstatem set-statem)
+
+      (defcommand set-statem :add [mstate]
+        (args [] [gen/integer])
+        (advance [_ [_ value]] (conj (set mstate) value)))
+
+      (defcommand set-statem :has [mstate]
+        (args [] [gen/integer])
+        (verify [_ [_ value]] (contains? (mstate) value)))
 
   "
   [table-name cmd-name [model-state this :as shared-bindings] & methods]
@@ -474,10 +495,10 @@
   [initial-state statem cmds]
   (trace 'shrink-commands
     (let [cmds (vec cmds)
-          rt (shrink-commands* (vec (range 0 (count cmds)))
-                               initial-state
-                               statem
-                               cmds)]
+          rt   (shrink-commands* (vec (range 0 (count cmds)))
+                                 initial-state
+                                 statem
+                                 cmds)]
       (rose/make-rose cmds
                       (rose/children rt)
                       ;; QUESTION: should we include root (which is always empty)
@@ -541,7 +562,7 @@
 
   **Example:**
 
-    (cmd-seq statem {:select-generator select-by-any})
+      (cmd-seq statem {:select-generator select-by-any})
   "
   (select-cmds (comp gen/one-of vals)))
 
@@ -560,8 +581,8 @@
   **Example:**
 
       (cmd-seq statem {:select-generator (select-by-frequency {:new    1000
-                                                              :add    100
-                                                              :remove 10})})
+                                                               :add    100
+                                                               :remove 10})})
   "
   [cmd-kw->count]
   (select-cmds #(gen/frequency (mapv (fn [[k c]]
@@ -578,10 +599,11 @@
   - `statem` **(required, StateMachine)**
       The state machine that the sequence of commands must conform to.
   - `select-generator` **(optional, fn[1-arg])**
-      A function that accepts a map of {:command-kw command-impl} and returns
+      A function that accepts a map of `{:command-kw command-impl}` and returns
       a generator that picks one of the command-impls.
 
-      The default implementation uses `clojure.test.check.generators/one-of`.
+      The default implementation uses [[select-by-any]], which does a fair
+      random selection of commands.
 
       The map contains only commands that are valid given the current state of
       the state machine by using `assume`. Providing a custom function here can
@@ -592,7 +614,7 @@
       bound range as more tests are generated).
   - `initial-state` **(optional, anything StateMachine accepts as model state)**
       The initial state when the state machine starts. Should be the same as
-      the one given to `run-cmds`.
+      the one given to [[run-cmds]].
 
   **Example:**
 
@@ -631,7 +653,8 @@
 
     - To be somewhat human readable (since test.check prints this)
     - To have enough the data to be used for shrinking commands
-    - To be fast at generated. State machine generation can be slow for large state machines.
+    - To have enough information in each statement for an interpreter function to operate
+    - To be fast at generating. State machine generation can be slow for large state machines.
 
     For the last reason, this is the reason why the format should be considered
     opaque. It may be useful for inspecting, but it should be considered 'no
@@ -807,30 +830,6 @@
                 :cmd          cmd}))
            {:ok? true}))))))
 
-(def ^:private ^:dynamic *debug-statem* false)
-(def ^:private ^:dynamic *debug-return-values* false)
-
-(defn- debug-start [cmds initial-mstate]
-  (println (format "┌ commands (%d)" (count cmds)))
-  (when *debug-statem*
-    (println "│   └ mstate:" (pr-str initial-mstate))))
-(defn- debug-step [stmt mstate next-mstate var-table]
-  (println "│" (pr-str stmt))
-  (when *debug-statem*
-    (println "│  "
-             (if *debug-return-values*
-               "│"
-               "└")
-             "mstate:" (pr-str next-mstate))))
-(defn- debug-return [return-value]
-  (when *debug-return-values*
-    (println "│   └ returned:" (pr-str return-value))))
-(defn- debug-end [ret]
-  (println "└" (if (:ok? ret)
-                 "OK"
-                 "FAILED"))
-  ret)
-
 (defn run-cmds-debug
   "Identical to [[run-cmds]], but prints out data related to each command executed.
 
@@ -855,49 +854,65 @@
       Should this runner attempt to catch exceptions? Catching exceptions allows
       the runner to minimize the failure, but may lose the original stacktrace.
       Defaults to true.
+  - `debug-method` **(optional, keyword)**
+      How should debug information be emitted? Default is :print which prints to stdout.
+      Other supported methods:
+        - `:inspect` Emits data to clojure.inspector/inspect.
+        - `:inspect-tree` Emits data to clojure.inspector/inspect-tree
+        - `:inspect-table` Emits data to clojure.inspector/inspect-tabl
+
+      Note that inspector debug methods create windows per `run-cmds-debug`
+      invocation, so using those methods inside a property may cause many windows to
+      be created.
   "
   ([^StateMachine statem cmds interpreter]
    (run-cmds-debug statem cmds interpreter nil))
   ([^StateMachine statem cmds interpreter
-    {:as   options
-     :keys [initial-state
+    {:keys [initial-state
             mstate?
             return-value?
-            catch?]
+            catch?
+            debug-method]
      :or   {return-value? true
-            catch?        true}}]
+            catch?        true
+            debug-method  :print}}]
    (let [interpreter (if catch?
                        (catch-interpreter interpreter)
-                       interpreter)]
-     (binding [*debug-statem*        mstate?
-               *debug-return-values* return-value?]
-       (debug-start cmds nil)
-       (debug-end
-        (loop [rem-cmds  cmds
-               mstate    initial-state
-               var-table {}]
-          (if (pos? (count rem-cmds))
-            (let [[_ v [kind :as cmd] :as stmt] (first rem-cmds)
-                  c                             (lookup-command statem kind)
-                  next-mstate                   (advance c mstate v cmd)
-                  _                             (debug-step stmt mstate next-mstate var-table)
-                  return-value                  (interpreter cmd {:var-sym   v
-                                                                  :var-table var-table})
-                  _                             (debug-return return-value)]
-              (if (and (not (error? return-value))
-                       (verify c next-mstate mstate cmd return-value))
-                (recur (rest rem-cmds)
-                       next-mstate
-                       (if (nil? return-value)
-                         var-table
-                         (assoc var-table v return-value)))
-                {:ok?          false
-                 :cmds         cmds
-                 :vars         var-table
-                 :model-state  mstate
-                 :return-value return-value
-                 :cmd          cmd}))
-            {:ok? true})))))))
+                       interpreter)
+         tracer      (if (#{:inspect :inspect-tree :inspect-table} debug-method)
+                       (internal/->CmdRunInspector mstate? return-value? debug-method (atom nil))
+                       (internal/->CmdRunPrinter mstate? return-value?))
+         _ (internal/run-start tracer cmds nil)
+         result (loop [rem-cmds  cmds
+                       mstate    initial-state
+                       var-table {}]
+                  (if (pos? (count rem-cmds))
+                    (let [[_ v [kind :as cmd] :as stmt]
+                          (first rem-cmds)
+
+                          c            (lookup-command statem kind)
+                          next-mstate  (advance c mstate v cmd)
+                          _            (internal/run-step tracer stmt mstate next-mstate var-table)
+                          return-value (interpreter cmd {:var-sym   v
+                                                         :var-table var-table})
+                          valid?  (and (not (error? return-value))
+                                       (verify c next-mstate mstate cmd return-value))]
+                      (internal/run-return tracer stmt mstate next-mstate var-table return-value valid?)
+                      (if valid?
+                        (recur (rest rem-cmds)
+                               next-mstate
+                               (if (nil? return-value)
+                                 var-table
+                                 (assoc var-table v return-value)))
+                        {:ok?          false
+                         :cmds         cmds
+                         :vars         var-table
+                         :model-state  mstate
+                         :return-value return-value
+                         :cmd          cmd}))
+                    {:ok? true}))]
+     (internal/run-end tracer result)
+     result)))
 
 (defn- denamespace-syms [form]
   (walk/postwalk
