@@ -7,5 +7,4 @@ test:
 docs:
 	rm -rf docs
 	lein codox
-	mkdir docs
 	cp -r target/doc docs/
