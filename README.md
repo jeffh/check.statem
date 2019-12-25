@@ -1,5 +1,7 @@
 # check.statem
 
+[Docs](https://jeffh.github.io/check.statem/)
+
 Facilities for generating test programs using state machines.
 
 For details about why this can be useful, check out the [talk by John Hughes](https://www.youtube.com/watch?v=zi0rHwfiX1Q). Unlike what John Hughes' demos, this library only supports serialized state machine testing (no parallel testing).
