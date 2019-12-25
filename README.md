@@ -21,7 +21,7 @@ Or clojure deps:
 ## Example
 
 ```clojure
-(require '[check.statem :refer [defstatem cmd-seq run-cmds]])
+(require '[net.jeffhui.check.statem :refer [defstatem cmd-seq run-cmds]])
 
 (definterface IQueue
   (^void init [^int size])
