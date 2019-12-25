@@ -83,7 +83,7 @@
     (walk/macroexpand-all form)
     false
     (catch Throwable t
-      (instance? AssertionError (.getCause t)))))
+      (instance? IllegalArgumentException (.getCause t)))))
 
 (deftest validate-defstatem
   (is (macroexpand-thrown? `(defstatem bad-statem [mstate] (:add (~'assume [~'x] true)))))
