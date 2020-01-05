@@ -111,7 +111,7 @@ If you run it, you'll get a test failure similar to this value:
  [:set [:var 18] [:get :A]]]
 ```
 
-This is a minimal test case that produces the failure.
+This is a minimal test case that produces the failure of our implementation (in `kv-interpreter`). We can update the implementation to fix the test.
 
 Obviously, the large the system to test against, the greater difference between the model implementation and the production implemention will typically be. Small examples typically produce the similar sizes of implementations.
 
@@ -165,6 +165,6 @@ Obviously, the large the system to test against, the greater difference between 
 
 ## License
 
-Copyright © 2019 Jeff Hui
+Copyright © 2020 Jeff Hui
 
 Distributed under the Eclipse Public License version 1.0.
