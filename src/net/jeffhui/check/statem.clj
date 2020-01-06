@@ -703,6 +703,23 @@
   "Wraps an interpreter function that provides try-catch error behavior that
   run-cmds expects.
 
+  Using this decorator is equivalent to passing `{:catch? true}` to [[run-cmds-debug]].
+  "
+  [interpreter]
+  (fn catch-interpreter-runner [& args]
+    (try
+      (apply interpreter args)
+      (catch Exception e
+        (ex-info "Uncaught exception"
+                 {::fail-fast true
+                  :exception   e
+                  :interpreter interpreter
+                  :args        args}
+                 e)))))
+
+(defn catch-print-interpreter
+  "Like [[catch-interprter]], but prints to stdout
+
   Using this decorator is equivalent to passing `{:catch? true}` to [[run-cmds]].
   "
   [interpreter]
@@ -710,6 +727,7 @@
     (try
       (apply interpreter args)
       (catch Exception e
+        (.printStackTrace e)
         (ex-info "Uncaught exception"
                  {::fail-fast true
                   :exception   e
@@ -804,7 +822,7 @@
                   (keyword (ffirst cmds)))
              "Invalid commands. Did you mean to remove one level of nesting from test results?")
      (let [interpreter (if catch?
-                         (catch-interpreter interpreter)
+                         (catch-print-interpreter interpreter)
                          interpreter)]
        (loop [rem-cmds  cmds
               mstate    initial-state
@@ -833,6 +851,10 @@
 (defn run-cmds-debug
   "Identical to [[run-cmds]], but prints out data related to each command executed.
 
+  Because of the debugging instrumentation, this executes commands more slowly
+  than [[run-cmds]]. This function is typically more useful if you're diagnosing
+  why one particular sequence of commands is failing.
+
   Parameters:
 
   - `statem` **(required, StateMachine)**
@@ -855,13 +877,15 @@
       the runner to minimize the failure, but may lose the original stacktrace.
       Defaults to true.
   - `debug-method` **(optional, keyword)**
-      How should debug information be emitted? Default is :print which prints to stdout.
-      Other supported methods:
+      How should debug information be emitted? Default is `:print` which prints
+      to stdout. Supported methods:
+
+        - `:print` Prints data to stdout. Default value.
         - `:inspect` Emits data to clojure.inspector/inspect.
         - `:inspect-tree` Emits data to clojure.inspector/inspect-tree
         - `:inspect-table` Emits data to clojure.inspector/inspect-tabl
 
-      Note that inspector debug methods create windows per `run-cmds-debug`
+      Note that inspect debug methods create windows per `run-cmds-debug`
       invocation, so using those methods inside a property may cause many windows to
       be created.
   "
