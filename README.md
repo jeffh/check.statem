@@ -6,11 +6,31 @@ Facilities for generating test programs using state machines.
 
 ## What is this?
 
-This library allows you to define a state machine (aka - a model) that can be used to compare against an API/subject. This allows test.check to explore possible usages of your API that is stateful (as opposed to traditional, purely functional test subjects).
+This library allows you to define a state machine (aka - a model) that can be
+used to compare against an API/subject. This allows test.check to explore
+possible usages of your API that is stateful (as opposed to traditional, purely
+functional test subjects).
 
-In test.check terms, this library provides a generator that produces valid programs that conform to state machine specification. Shrunken values produce smaller variants of the program that still conform to the same state machine.
+In test.check terms, this library provides a generator that produces valid
+programs that conform to state machine specification. Shrunken values produce
+smaller variants of the program that still conform to the same state machine.
 
-For details about why this can be useful, check out the [talk by John Hughes](https://www.youtube.com/watch?v=zi0rHwfiX1Q). Unlike what John Hughes' demos, this library only supports serialized state machine testing (no parallel testing).
+While you can naively do something like:
+
+```clojure
+(def put-generator ...)
+(def get-generator ...)
+(def kv-store-ops-generator (gen/vector (gen/one-of [get-generator put-generator])))
+```
+
+test.check doesn't provide any way to generate a sequence of commands that's
+dependent on the previous implementation.. The above generator can only generate
+values if every operation is valid to perform at any time.
+
+For details about why this can be useful, check out the [talk by John
+Hughes](https://www.youtube.com/watch?v=zi0rHwfiX1Q). Unlike what John Hughes'
+demos, this library only supports serialized state machine testing (no parallel
+testing).
 
 ## Usage
 

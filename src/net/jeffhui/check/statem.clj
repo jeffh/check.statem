@@ -500,11 +500,11 @@
                                  statem
                                  cmds)]
       (rose/make-rose cmds
-                      (rose/children rt)
                       ;; QUESTION: should we include root (which is always empty)
                       ;; incase a bug occurs during initialization of the test
                       ;; case?
-                      #_(cons (rose/pure (rose/root rt))
+                      #_(rose/children rt)
+                      (cons (rose/pure (rose/root rt))
                               (rose/children rt))))))
 
 (defn- assignment-statement [varindex cmd]
@@ -687,16 +687,23 @@
   ([statem cmds] (valid-cmd-seq? statem cmds nil))
   ([statem cmds {:keys [initial-state]}]
    (trace 'valid-cmd-seq?
-     (loop [rem-cmds  cmds
-            mstate    initial-state]
+     (loop [rem-cmds cmds
+            mstate   initial-state]
        (if (pos? (count rem-cmds))
          (let [[_ v [kind :as cmd]] (first rem-cmds)
                c                    (lookup-command statem kind)
-               next-mstate          (advance c mstate v cmd)]
-           (if (assume c mstate)
-             (recur (rest rem-cmds)
-                    next-mstate)
-             false))
+               next-mstate          (try (advance c mstate v cmd)
+                                         (catch Exception e
+                                           ::error))]
+           (cond
+             (= ::error next-mstate) false
+
+             (try (assume c mstate)
+                  (catch Exception e
+                    false))
+             (recur (rest rem-cmds) next-mstate)
+
+             :else false))
          true)))))
 
 (defn catch-interpreter

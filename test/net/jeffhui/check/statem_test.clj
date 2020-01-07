@@ -5,7 +5,19 @@
             [clojure.test.check.clojure-test :refer [defspec]]
             [clojure.test.check.generators :as gen]
             [clojure.test.check.properties :refer [for-all]]
+            [clojure.test.check.random :as random]
+            [clojure.test.check.rose-tree :as rose-tree]
             [clojure.walk :as walk]))
+
+(defn- generate-rt
+  ([generator]
+   (generate-rt generator 30))
+  ([generator size]
+   (let [rng (random/make-random)]
+     (gen/call-gen generator rng size)))
+  ([generator size seed]
+   (let [rng (random/make-random seed)]
+     (gen/call-gen generator rng size))))
 
 (definterface IQueue
   (^void init [^int size])
@@ -57,6 +69,56 @@
   (is (statem/lookup-command queue-statem :enqueue))
   (is (statem/lookup-command queue-statem :deque))
   (is (= #{:new :enqueue :deque} (set (statem/list-commands queue-statem)))))
+
+(deftest valid-cmd-seq-rejects-invalid-specific-sequences
+  (is (false? (statem/valid-cmd-seq? queue-statem [[:set [:var 1] [:new]]
+                                                   [:set [:var 2] [:new]]])))
+
+  (is (false? (statem/valid-cmd-seq? queue-statem [[:set [:var 1] [:new]]
+                                                   [:set [:var 2] [:enqueue 1]]
+                                                   [:set [:var 3] [:new]]]))))
+
+
+(defn- random-commands
+  "A bad implementation of cmd-seq, do not try at home."
+  []
+  (let [statem queue-statem]
+    (gen/such-that
+     ;; single commands can potentially be valid queue-statem (see )
+     #(not= :new (first (last (first %))))
+     (gen/not-empty
+      (gen/vector
+       (gen/one-of
+        (into
+         []
+         (map-indexed
+          (fn [i cmd-name]
+            (let [c (statem/lookup-command statem cmd-name)]
+              (gen/fmap
+               (fn [cmd-data]
+                 [:set [:var i] cmd-data])
+               (statem/args c nil)))))
+         (statem/list-commands statem))))))))
+
+(defspec valid-cmd-seq-rejects-invalid-sequences 100
+  (for-all [cmds (random-commands)]
+           (not (statem/valid-cmd-seq? queue-statem cmds))))
+
+(defspec generation-always-conforms-to-statem 100
+  (for-all [cmds (cmd-seq queue-statem)]
+           (statem/valid-cmd-seq? queue-statem cmds)))
+
+(deftest shrinking-always-conforms-to-statem
+  (dotimes [i 100]
+    (let [cmds-gen (cmd-seq queue-statem)]
+      ;; fully walking a tree never happens for large generations, and is
+      ;; impractical to fully traverse (without using lots of memory).
+      (let [rt              (generate-rt cmds-gen (mod i 5))
+            original-size   (count (rose-tree/root rt))
+            shrinking-sizes (set (map count (rose-tree/seq rt)))]
+        (is (= shrinking-sizes (set (range 1 (inc original-size)))))
+        (is (every? (partial statem/valid-cmd-seq? queue-statem)
+                    (rose-tree/seq rt)))))))
 
 (defspec queue-program-generation-using-fair-distribution 100
   (for-all [cmds (cmd-seq queue-statem)]
@@ -149,8 +211,7 @@
 (comment
   (check! queue-statem)
   (clojure.pprint/pprint
-   (last
-    (gen/sample (cmd-seq queue-statem {:size 3}))))
+   (gen/generate (cmd-seq queue-statem {:size 3})))
 
   ;; --- no tracing, rounded to nearest 100ms, informal test runs
   ;; ~2400ms ;; first test
