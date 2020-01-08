@@ -847,13 +847,26 @@
                       (if (nil? return-value)
                         var-table
                         (assoc var-table v return-value)))
-               {:ok?          false
-                :cmds         cmds
-                :vars         var-table
-                :model-state  mstate
-                :return-value return-value
-                :cmd          cmd}))
+               {:ok?                false
+                :cmds               cmds
+                :last-cmd           cmd
+                :vars               var-table
+                :before-model-state mstate
+                :after-model-state  next-mstate
+                :return-value       return-value}))
            {:ok? true}))))))
+
+(defn print-failed-runs!
+  [run-cmds-results]
+  (let [results run-cmds-results]
+     (if (:ok? results)
+       (:ok? results)
+       (do (println "===============")
+           (println)
+           (pprint/pprint run-cmds-results)
+           (println)
+           (println "================")
+           false))))
 
 (defn run-cmds-debug
   "Identical to [[run-cmds]], but prints out data related to each command executed.
