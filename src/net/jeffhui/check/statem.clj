@@ -527,6 +527,14 @@
                    (rose/fmap #(gen/call-gen (f rose %) rnd size)
                               rose)))))
 
+(defn- bind-with-rose
+  "Like gen/bind, but passes along the generated rose-tree to f.
+
+  This allows f to track the original rose tree for custom shrinking behaviors.
+  "
+  [generator f]
+  (gen/gen-bind generator (partial bind-helper f)))
+
 (defn- cmd-state-seq [select-generator state statem size excluded-commands varindex]
   (trace 'cmd-state-seq
     (let [possible-commands (into {}
@@ -535,25 +543,22 @@
                                    (map #(vector (first %) (args (second %) state))))
                                   (apply dissoc (:commands statem) excluded-commands))]
       (if (pos? (count possible-commands))
-        (gen/gen-bind (gen/fmap (partial assignment-statement varindex) (select-generator statem state possible-commands))
-                      (partial bind-helper
-                               (fn [rt [_ _ [kind & data :as cmd] :as stmt]]
-                                 (if (nil? cmd)
-                                   (gen/return [])
-                                   (if (only-when (lookup-command statem kind) state cmd)
-                                     (if (pos? size)
-                                       (gen/fmap
-                                        (partial into [(with-meta stmt #_(assignment-statement varindex cmd)
-                                                         {::rose-tree rt})])
-                                        (cmd-state-seq select-generator
-                                                       (advance (lookup-command statem kind) state (varsym varindex) cmd)
-                                                       statem
-                                                       (dec size)
-                                                       #{}
-                                                       (inc varindex)))
-                                       (gen/return [(with-meta stmt #_(assignment-statement varindex cmd)
-                                                      {::rose-tree rt})]))
-                                     (cmd-state-seq select-generator state statem size (conj excluded-commands kind) (inc varindex)))))))
+        (bind-with-rose (gen/fmap (partial assignment-statement varindex) (select-generator statem state possible-commands))
+                        (fn [rt [_ _ [kind & data :as cmd] :as stmt]]
+                          (if (nil? cmd)
+                            (gen/return [])
+                            (if (only-when (lookup-command statem kind) state cmd)
+                              (if (pos? size)
+                                (gen/fmap
+                                 (partial into [(with-meta stmt {::rose-tree rt})])
+                                 (cmd-state-seq select-generator
+                                                (advance (lookup-command statem kind) state (varsym varindex) cmd)
+                                                statem
+                                                (dec size)
+                                                #{}
+                                                (inc varindex)))
+                                (gen/return [(with-meta stmt {::rose-tree rt})]))
+                              (cmd-state-seq select-generator state statem size (conj excluded-commands kind) (inc varindex))))))
         (gen/return [])))))
 
 (defn- select-cmds
