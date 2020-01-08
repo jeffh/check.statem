@@ -7,7 +7,8 @@
             [clojure.test.check.properties :refer [for-all]]
             [clojure.test.check.random :as random]
             [clojure.test.check.rose-tree :as rose-tree]
-            [clojure.walk :as walk]))
+            [clojure.walk :as walk]
+            [clojure.test.check.rose-tree :as rose]))
 
 (defn- generate-rt
   ([generator]
@@ -108,6 +109,10 @@
   (for-all [cmds (cmd-seq queue-statem)]
            (statem/valid-cmd-seq? queue-statem cmds)))
 
+#_
+(doseq [r (rose/seq (generate-rt (cmd-seq queue-statem) 4))]
+  (clojure.pprint/pprint r))
+
 (deftest shrinking-always-conforms-to-statem
   (dotimes [i 100]
     (let [cmds-gen (cmd-seq queue-statem)]
@@ -116,7 +121,7 @@
       (let [rt              (generate-rt cmds-gen (mod i 5))
             original-size   (count (rose-tree/root rt))
             shrinking-sizes (set (map count (rose-tree/seq rt)))]
-        (is (= shrinking-sizes (set (range 1 (inc original-size)))))
+        (is (= shrinking-sizes (set (range 0 (inc original-size)))))
         (is (every? (partial statem/valid-cmd-seq? queue-statem)
                     (rose-tree/seq rt)))))))
 

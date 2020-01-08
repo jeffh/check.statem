@@ -37,12 +37,14 @@
             [clojure.string :as string]
             [clojure.pprint :as pprint]
             [clojure.test :refer :all]
+            [clojure.test.check.results :as results]
             [clojure.test.check.clojure-test :refer [defspec]]
             [clojure.test.check.generators :as gen]
             [clojure.test.check.properties :refer [for-all]]
             [clojure.test.check.random :as random :refer [make-random]]
             [clojure.test.check.rose-tree :as rose]
             [clojure.walk :as walk]
+            [clojure.math.combinatorics :as combo]
             [net.jeffhui.check.statem.internal :as internal :refer [trace]]))
 
 (defmacro ^{:private true} assert-args
@@ -432,7 +434,6 @@
        (.substring (name var) (count "var-")))
       (catch NumberFormatException e nil))))
 
-
 (defn- shrink-valid-cmd-sequence? [initial-state statem cmds allowed-indicies]
   (trace 'shrink-valid-cmd-sequence?
     ;; cmds must be a vector
@@ -485,31 +486,46 @@
        (realize-cmds statem cmds indicies-to-keep)
        (sequence ;; can reach OOM to realize this value non-lazily
         (comp
-         (map (partial vec-drop-at indicies-to-keep))
+         (mapcat (partial combo/combinations indicies-to-keep))
          (filter (partial shrink-valid-cmd-sequence? initial-state statem cmds))
          (keep #(shrink-commands* % initial-state statem cmds)))
         (range (count indicies-to-keep)))))))
+
+(defn- shrink-commands-data [initial-state statem cmds]
+  (trace 'shrink-commands-data
+    (let [rt-cmds (mapv (comp ::rose-tree meta) cmds)]
+      (rose/join
+       (rose/zip (fn [& cmds]
+                   (shrink-commands* (vec (range 0 (count cmds))) initial-state statem (vec cmds)))
+                 rt-cmds)))))
 
 (defn- shrink-commands
   "Creates a rose tree from an initial value of commands generated."
   [initial-state statem cmds]
   (trace 'shrink-commands
     (let [cmds (vec cmds)
-          rt   (shrink-commands* (vec (range 0 (count cmds)))
-                                 initial-state
-                                 statem
-                                 cmds)]
+          rt   (shrink-commands-data initial-state statem cmds)]
       (rose/make-rose cmds
                       ;; QUESTION: should we include root (which is always empty)
                       ;; incase a bug occurs during initialization of the test
-                      ;; case?
+                      ;; case? Or is this a waste of time?
                       #_(rose/children rt)
-                      (cons (rose/pure (rose/root rt))
-                              (rose/children rt))))))
+                      (cons (rose/pure [])
+                            (rose/children rt))))))
 
 (defn- assignment-statement [varindex cmd]
   (trace 'assignment-statement
     [:set (varsym varindex) cmd]))
+
+(def ^:private make-gen #'gen/make-gen)
+
+(defn- bind-helper
+  [f rose]
+  (gen/gen-fmap rose/join
+                (make-gen
+                 (fn [rnd size]
+                   (rose/fmap #(gen/call-gen (f rose %) rnd size)
+                              rose)))))
 
 (defn- cmd-state-seq [select-generator state statem size excluded-commands varindex]
   (trace 'cmd-state-seq
@@ -519,22 +535,25 @@
                                    (map #(vector (first %) (args (second %) state))))
                                   (apply dissoc (:commands statem) excluded-commands))]
       (if (pos? (count possible-commands))
-        (gen/bind (select-generator statem state possible-commands)
-                  (fn [[kind & data :as cmd]]
-                    (if (nil? cmd)
-                      (gen/return [])
-                      (if (only-when (lookup-command statem kind) state cmd)
-                        (if (pos? size)
-                          (gen/fmap
-                           (partial into [(assignment-statement varindex cmd)])
-                           (cmd-state-seq select-generator
-                                          (advance (lookup-command statem kind) state (varsym varindex) cmd)
-                                          statem
-                                          (dec size)
-                                          #{}
-                                          (inc varindex)))
-                          (gen/return [(assignment-statement varindex cmd)]))
-                        (cmd-state-seq select-generator state statem size (conj excluded-commands kind) (inc varindex))))))
+        (gen/gen-bind (gen/fmap (partial assignment-statement varindex) (select-generator statem state possible-commands))
+                      (partial bind-helper
+                               (fn [rt [_ _ [kind & data :as cmd] :as stmt]]
+                                 (if (nil? cmd)
+                                   (gen/return [])
+                                   (if (only-when (lookup-command statem kind) state cmd)
+                                     (if (pos? size)
+                                       (gen/fmap
+                                        (partial into [(with-meta stmt #_(assignment-statement varindex cmd)
+                                                         {::rose-tree rt})])
+                                        (cmd-state-seq select-generator
+                                                       (advance (lookup-command statem kind) state (varsym varindex) cmd)
+                                                       statem
+                                                       (dec size)
+                                                       #{}
+                                                       (inc varindex)))
+                                       (gen/return [(with-meta stmt #_(assignment-statement varindex cmd)
+                                                      {::rose-tree rt})]))
+                                     (cmd-state-seq select-generator state statem size (conj excluded-commands kind) (inc varindex)))))))
         (gen/return [])))))
 
 (defn- select-cmds
@@ -621,7 +640,7 @@
       (defn queue-interpreter [cmd run-cmd-ctx] ...)
 
       (for-all [cmds (cmd-seq queue-statem)]
-        (:ok? (run-cmds queue-statem cmds queue-interpreter)))
+        (:pass? (run-cmds queue-statem cmds queue-interpreter)))
 
     For a more thorough example, check out [[run-cmds]].
 
@@ -745,12 +764,17 @@
 (defn- error? [e]
   (boolean (::fail-fast (ex-data e))))
 
+(defrecord ExecutionResult []
+  results/Result
+  (pass? [m] (:pass? m))
+  (result-data [m] m))
+
 (defn run-cmds
   "Executes the symbolic representation of a sequence of commands using an
   interpreter.
 
   Returns a map about the execution result. Always returns a map with a key
-  `:ok?` to indicate if the test program succeeded or failed.
+  `:pass?` to indicate if the test program succeeded or failed.
 
   Parameters:
 
@@ -818,7 +842,7 @@
                 (verify [_ _ r] (= r (first (:items mstate))))))
 
       (for-all [cmds (cmd-seq queue-statem)]
-              (:ok? (run-cmds queue-statem cmds queue-interpreter)))
+              (:pass? (run-cmds queue-statem cmds queue-interpreter)))
   "
   ([^StateMachine statem cmds interpreter] (run-cmds statem cmds interpreter nil))
   ([^StateMachine statem cmds interpreter {:keys [initial-state catch?]
@@ -828,45 +852,49 @@
                   (vector? (first cmds))
                   (keyword (ffirst cmds)))
              "Invalid commands. Did you mean to remove one level of nesting from test results?")
-     (let [interpreter (if catch?
-                         (catch-print-interpreter interpreter)
-                         interpreter)]
-       (loop [rem-cmds  cmds
-              mstate    initial-state
-              var-table {}]
-         (if (pos? (count rem-cmds))
-           (let [[_ v [kind :as cmd]] (first rem-cmds)
-                 c                    (lookup-command statem kind)
-                 next-mstate          (advance c mstate v cmd)
-                 return-value         (interpreter cmd {:var-sym   v
-                                                        :var-table var-table})]
-             (if (and (not (error? return-value))
-                      (verify c next-mstate mstate cmd return-value))
-               (recur (rest rem-cmds)
-                      next-mstate
-                      (if (nil? return-value)
-                        var-table
-                        (assoc var-table v return-value)))
-               {:ok?                false
-                :cmds               cmds
-                :last-cmd           cmd
-                :vars               var-table
-                :before-model-state mstate
-                :after-model-state  next-mstate
-                :return-value       return-value}))
-           {:ok? true}))))))
+     (map->ExecutionResult
+      (let [interpreter (if catch?
+                          (catch-print-interpreter interpreter)
+                          interpreter)]
+        (loop [rem-cmds  cmds
+               mstate    initial-state
+               var-table {}]
+          (if (pos? (count rem-cmds))
+            (let [[_ v [kind :as cmd]] (first rem-cmds)
+                  c                    (lookup-command statem kind)
+                  next-mstate          (advance c mstate v cmd)
+                  return-value         (interpreter cmd {:var-sym   v
+                                                         :var-table var-table})]
+              (if (and (not (error? return-value))
+                       (verify c next-mstate mstate cmd return-value))
+                (recur (rest rem-cmds)
+                       next-mstate
+                       (if (nil? return-value)
+                         var-table
+                         (assoc var-table v return-value)))
+                {:pass?              false
+                 :ok?                false ;; TODO: GROT
+                 :cmds               cmds
+                 :last-cmd           cmd
+                 :vars               var-table
+                 :before-model-state mstate
+                 :after-model-state  next-mstate
+                 :return-value       return-value}))
+            {:pass? true
+             ;; TODO: GROT
+             :ok? true})))))))
 
 (defn print-failed-runs!
   [run-cmds-results]
   (let [results run-cmds-results]
-     (if (:ok? results)
-       (:ok? results)
-       (do (println "===============")
-           (println)
-           (pprint/pprint run-cmds-results)
-           (println)
-           (println "================")
-           false))))
+    (if (results/pass? results)
+      results
+      (do (println "-----FAIL------")
+          (println)
+          (pprint/pprint run-cmds-results)
+          (println)
+          (println "======END=======")
+          false))))
 
 (defn run-cmds-debug
   "Identical to [[run-cmds]], but prints out data related to each command executed.
@@ -920,43 +948,47 @@
      :or   {return-value? true
             catch?        true
             debug-method  :print}}]
-   (let [interpreter (if catch?
-                       (catch-interpreter interpreter)
-                       interpreter)
-         tracer      (if (#{:inspect :inspect-tree :inspect-table} debug-method)
-                       (internal/->CmdRunInspector mstate? return-value? debug-method (atom nil))
-                       (internal/->CmdRunPrinter mstate? return-value?))
-         _ (internal/run-start tracer cmds nil)
-         result (loop [rem-cmds  cmds
-                       mstate    initial-state
-                       var-table {}]
-                  (if (pos? (count rem-cmds))
-                    (let [[_ v [kind :as cmd] :as stmt]
-                          (first rem-cmds)
+   (map->ExecutionResult
+    (let [interpreter (if catch?
+                        (catch-interpreter interpreter)
+                        interpreter)
+          tracer      (if (#{:inspect :inspect-tree :inspect-table} debug-method)
+                        (internal/->CmdRunInspector mstate? return-value? debug-method (atom nil))
+                        (internal/->CmdRunPrinter mstate? return-value?))
+          _           (internal/run-start tracer cmds nil)
+          result      (loop [rem-cmds  cmds
+                             mstate    initial-state
+                             var-table {}]
+                        (if (pos? (count rem-cmds))
+                          (let [[_ v [kind :as cmd] :as stmt]
+                                (first rem-cmds)
 
-                          c            (lookup-command statem kind)
-                          next-mstate  (advance c mstate v cmd)
-                          _            (internal/run-step tracer stmt mstate next-mstate var-table)
-                          return-value (interpreter cmd {:var-sym   v
-                                                         :var-table var-table})
-                          valid?  (and (not (error? return-value))
-                                       (verify c next-mstate mstate cmd return-value))]
-                      (internal/run-return tracer stmt mstate next-mstate var-table return-value valid?)
-                      (if valid?
-                        (recur (rest rem-cmds)
-                               next-mstate
-                               (if (nil? return-value)
-                                 var-table
-                                 (assoc var-table v return-value)))
-                        {:ok?          false
-                         :cmds         cmds
-                         :vars         var-table
-                         :model-state  mstate
-                         :return-value return-value
-                         :cmd          cmd}))
-                    {:ok? true}))]
-     (internal/run-end tracer result)
-     result)))
+                                c            (lookup-command statem kind)
+                                next-mstate  (advance c mstate v cmd)
+                                _            (internal/run-step tracer stmt mstate next-mstate var-table)
+                                return-value (interpreter cmd {:var-sym   v
+                                                               :var-table var-table})
+                                valid?       (and (not (error? return-value))
+                                                  (verify c next-mstate mstate cmd return-value))]
+                            (internal/run-return tracer stmt mstate next-mstate var-table return-value valid?)
+                            (if valid?
+                              (recur (rest rem-cmds)
+                                     next-mstate
+                                     (if (nil? return-value)
+                                       var-table
+                                       (assoc var-table v return-value)))
+                              {:ok?          false
+                               :pass?        false ;; TODO: GROT
+                               :cmds         cmds
+                               :vars         var-table
+                               :model-state  mstate
+                               :return-value return-value
+                               :cmd          cmd}))
+                          {:pass? true
+                           ;; TODO: GROT
+                           :ok? true}))]
+      (internal/run-end tracer result)
+      result))))
 
 (defn- denamespace-syms [form]
   (walk/postwalk
@@ -1038,18 +1070,17 @@
               (str "Expected to generate all commands, but didn't. Commands that didn't get generated: "
                    (pr-str diff))))))
 
-;; TODO: report this bug? I think this fails to compile in a weird unreadable
-;; way in cider because mstate isn't defined. Needs more investigation / update
-;; cider?
-;;
-;; Notes:
-;;  - this looks like cider middleware fault
-;;  - clojure repl reports a sane error message
-;;
-;; (defn test-example []
-;;   (loop [a nil]
-;;     (when a
-;;       (if false
-;;         (recur nil)
-;;         {:key mstate}))))
+(defn always*
+  "Function form of [[always]] macro."
+  [n f]
+  (let [result (f)]
+    (if (results/pass? result)
+      (if (zero? n)
+        result
+        (recur (dec n) f))
+      result)))
 
+(defmacro always
+  "Repeats a property (or any generated val)"
+  ([body] `(always* 10 (fn [] ~body)))
+  ([n body] `(always* ~n (fn [] ~body))))
