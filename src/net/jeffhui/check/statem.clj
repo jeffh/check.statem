@@ -476,9 +476,11 @@
         (transient [])
         indicies-to-keep)))))
 
-(defn- shrink-commands* [indicies-to-keep initial-state statem cmds]
+(defn- shrink-commands-size
+  "Shrinks number of commands in a sequence while conforming to the state machine"
+  [indicies-to-keep initial-state statem cmds]
   ;; NOTE: on the hot path. Small inefficiencies compound dramatically here
-  (trace 'shrink-commands*
+  (trace 'shrink-commands-size
     ;; indicies-to-keep must be vector
     ;; cmds must be a vector
     (when (pos? (count indicies-to-keep))
@@ -488,15 +490,17 @@
         (comp
          (mapcat (partial combo/combinations indicies-to-keep))
          (filter (partial shrink-valid-cmd-sequence? initial-state statem cmds))
-         (keep #(shrink-commands* % initial-state statem cmds)))
+         (keep #(shrink-commands-size % initial-state statem cmds)))
         (range (count indicies-to-keep)))))))
 
-(defn- shrink-commands-data [initial-state statem cmds]
+(defn- shrink-commands-data
+  "Generates associate command data shrink tree."
+  [initial-state statem cmds]
   (trace 'shrink-commands-data
     (let [rt-cmds (mapv (comp ::rose-tree meta) cmds)]
       (rose/join
        (rose/zip (fn [& cmds]
-                   (shrink-commands* (vec (range 0 (count cmds))) initial-state statem (vec cmds)))
+                   (shrink-commands-size (vec (range 0 (count cmds))) initial-state statem (vec cmds)))
                  rt-cmds)))))
 
 (defn- shrink-commands
