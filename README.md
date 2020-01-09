@@ -115,7 +115,7 @@ each test program generated.
 
 ```
 
-The returned data is an symbolic program representation this is a sequential,
+The returned data is an symbolic program representation is a sequential,
 imperiative form similar to:
 
 ```clojure
@@ -148,7 +148,7 @@ Finally, run it:
 (defspec kv-spec 100
   (for-all
    [cmds (cmd-seq key-value-statem)]
-   (:ok? (run-cmds key-value-statem cmds (kv-interpreter (atom []))))))
+   (run-cmds key-value-statem cmds (kv-interpreter (atom [])))))
 ```
 
 If you run it, you'll get a test failure similar to this value:
@@ -211,7 +211,7 @@ Small examples typically produce the similar sizes of implementations.
 
 (for-all [cmds (cmd-seq queue-statem)]
           ;; run-cmds-debug is useful to debug commands executed
-          (:ok? (run-cmds queue-statem cmds queue-interpreter)))
+          (run-cmds queue-statem cmds queue-interpreter))
 ```
 
 ## License
