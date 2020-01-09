@@ -1,8 +1,8 @@
 # check.statem
 
+[![Clojars Project](https://img.shields.io/clojars/v/net.jeffhui/check.statem.svg)](https://clojars.org/net.jeffhui/check.statem)
 [Docs](https://jeffh.github.io/check.statem/)
 
-[![Clojars Project](https://img.shields.io/clojars/v/net.jeffhui/check.statem.svg)](https://clojars.org/net.jeffhui/check.statem)
 
 Facilities for generating test programs using state machines.
 
