@@ -418,6 +418,7 @@
 ;; but using a tuple (aka vector) is much faster to operate with instead of having to parse
 (defn- varsym? [v]
   (and (vector? v)
+       (= 2 (count v))
        (= :var (v 0))))
 (defn- varsym [i]
   (trace 'varsym
