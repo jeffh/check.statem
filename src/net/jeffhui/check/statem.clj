@@ -518,7 +518,9 @@
                       (cons (rose/pure [])
                             (rose/children rt))))))
 
-(defn- assignment-statement [varindex cmd]
+(defn- assignment-statement
+  "Produces the assignment statement form: [:set [:var varindex] cmd]"
+  [varindex cmd]
   (trace 'assignment-statement
     [:set (varsym varindex) cmd]))
 
@@ -774,10 +776,21 @@
 (defn- error? [e]
   (boolean (::fail-fast (ex-data e))))
 
-(defrecord ExecutionResult []
+;; Represents an execution result
+;; Note: newer versions may add more fields
+(defrecord ExecutionResult [pass? cmds last-cmd vars before-model-state after-model-state return-value]
   results/Result
   (pass? [m] (:pass? m))
   (result-data [m] m))
+
+(def ^:private passed-execution-result
+  (->ExecutionResult true
+                     nil
+                     nil
+                     nil
+                     nil
+                     nil
+                     nil))
 
 (defn run-cmds
   "Executes the symbolic representation of a sequence of commands using an
