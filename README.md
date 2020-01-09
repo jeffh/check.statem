@@ -24,6 +24,20 @@ Hughes' demos, this library only supports serialized state machine testing (no
 parallel testing). Maybe someday in the future.
 
 
+### Installation
+
+To install via lein:
+
+```clojure
+[net.jeffhui/check.statem "1.0.0-SNAPSHOT"]
+```
+
+Or clojure deps:
+
+```clojure
+{:deps {net.jeffhui/check.statem {:mvn/version "1.0.0-SNAPSHOT"}}}
+```
+
 ### The Problem with the Naive Approach
 
 While you can currently do something like:
@@ -54,19 +68,7 @@ command sequence shrinks according to the state machine.
 
 ## Usage
 
-To install via lein:
-
-```clojure
-[net.jeffhui/check.statem "1.0.0-SNAPSHOT"]
-```
-
-Or clojure deps:
-
-```clojure
-{:deps {net.jeffhui/check.statem {:mvn/version "1.0.0-SNAPSHOT"}}}
-```
-
-To import:
+First require the library:
 
 ```clojure
 (require '[net.jeffhui.check.statem :refer [defstatem cmd-seq run-cmds check!]])
@@ -101,11 +103,12 @@ From there, we can check if we have something that works reasonably well:
 ```
 
 This only goes through and generates + shrinks some values to make sure there
-isn't obviously wrong. You can also use test.check's gen/sample for some example
-programs, but you'll probably want to look at only one at a time for clarity:
+isn't obviously wrong. You can also use test.check's gen/generate for some example
+programs. You can use gen/sample as well, but it'll probably be difficult to see
+each test program generated.
 
 ```clojure
-(rand-nth (gen/sample (cmd-seq key-value-statem)))
+(gen/generate (cmd-seq key-value-statem))
 ;; =>
 [[:set [:var 1] [:put :W4 {}]]
  [:set [:var 2] [:get :W4]]]
@@ -127,8 +130,8 @@ to use against an actual implementation:
 
 ```clojure
 ;; based on the example data above, the inner function will be called twice with cmd being:
-;;   cmd = [:put :W4 {}], ctx = {:var-sym [:var 1]}
-;;   cmd = [:get :W4], ctx = {:var-table {[:var 1] nil}, :var-sym [:var 2]}
+;;   cmd = [:put :W4 {}], ctx = {}
+;;   cmd = [:get :W4], ctx = {:var-table {[:var 1] nil}}
 (defn kv-interpreter [state]
   (fn [cmd ctx]
     (case (first cmd)
