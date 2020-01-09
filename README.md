@@ -4,20 +4,29 @@
 [Docs](https://jeffh.github.io/check.statem/)
 
 
-Facilities for generating test programs using state machines.
+Generate stateful tests with state machines.
 
 ## What is this?
 
 This library allows you to define a state machine (aka - a model) that can be
-used to compare against an API/subject. This allows test.check to explore
-possible usages of your API that is stateful (as opposed to traditional, purely
+used to compare against an API/SUT. This allows test.check to explore possible
+usages of your API that is stateful (as opposed to traditional, purely
 functional test subjects).
 
 In test.check terms, this library provides a generator that produces valid
 programs that conform to state machine specification. Shrunken values produce
 smaller variants of the program that still conform to the same state machine.
 
-While you can naively do something like:
+
+For details about why state machine testing can be useful, check out the [talk
+by John Hughes](https://www.youtube.com/watch?v=zi0rHwfiX1Q). Unlike what John
+Hughes' demos, this library only supports serialized state machine testing (no
+parallel testing). Maybe someday in the future.
+
+
+### The Problem with the Naive Approach
+
+While you can currently do something like:
 
 ```clojure
 (def put-generator ...)
@@ -36,13 +45,12 @@ That's not even considering the shrinking behaviors:
 
 - How do you honor shrinking with the above constraints?
   - eg - smaller sequences of commands should still have `get` to a key after `put`?
-- How do you ensure shrinking of related data
-  - If you're using test.check's `bind`, then full shrinking isn't honored
-
-For details about why state machine testing can be useful, check out the [talk
-by John Hughes](https://www.youtube.com/watch?v=zi0rHwfiX1Q). Unlike what John
-Hughes' demos, this library only supports serialized state machine testing (no
-parallel testing). Maybe someday in the future.
+- How do you ensure shrinking of related data?
+  - If you're using test.check's `bind`, then full shrinking isn't honored ([TCHECK-112](http://dev.clojure.org/jira/browse/TCHECK-112))
+  
+check.statem provides a more structured approach to defining state machine
+models that then can be used to generate a sequence of commands to execute. The
+command sequence shrinks according to the state machine.
 
 ## Usage
 
@@ -92,7 +100,9 @@ From there, we can check if we have something that works reasonably well:
 (check! key-value-statem) ;; => nil
 ```
 
-This only goes through and generates + shrinks some values to make sure there isn't obviously wrong. You can also use test.check's gen/sample for some example programs, but you'll probably want to look at only one at a time for clarity:
+This only goes through and generates + shrinks some values to make sure there
+isn't obviously wrong. You can also use test.check's gen/sample for some example
+programs, but you'll probably want to look at only one at a time for clarity:
 
 ```clojure
 (rand-nth (gen/sample (cmd-seq key-value-statem)))
@@ -102,7 +112,8 @@ This only goes through and generates + shrinks some values to make sure there is
 
 ```
 
-The returned data is an symbolic program representation this is a sequential, imperiative form similar to:
+The returned data is an symbolic program representation this is a sequential,
+imperiative form similar to:
 
 ```clojure
 (do
@@ -110,7 +121,9 @@ The returned data is an symbolic program representation this is a sequential, im
   (def v2 (put :W4)))
 ```
 
-Then, to compare the model against an implementation in tests, we need interpreter function that can translate the transitions from the state machine to use against an actual implementation:
+Then, to compare the model against an implementation in tests, we need
+interpreter function that can translate the transitions from the state machine
+to use against an actual implementation:
 
 ```clojure
 ;; based on the example data above, the inner function will be called twice with cmd being:
@@ -143,9 +156,12 @@ If you run it, you'll get a test failure similar to this value:
  [:set [:var 18] [:get :A]]]
 ```
 
-This is a minimal test case that produces the failure of our implementation (in `kv-interpreter`). We can update the implementation to fix the test.
+This is a minimal test case that produces the failure of our implementation (in
+`kv-interpreter`). We can update the implementation to fix the test.
 
-Obviously, the large the system to test against, the greater difference between the model implementation and the production implemention will typically be. Small examples typically produce the similar sizes of implementations.
+Obviously, the large the system to test against, the greater difference between
+the model implementation and the production implemention will typically be.
+Small examples typically produce the similar sizes of implementations.
 
 ## Example
 
