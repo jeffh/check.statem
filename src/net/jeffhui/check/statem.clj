@@ -1,5 +1,5 @@
 (ns net.jeffhui.check.statem
-  "Facilities for generating test programs using state machines.
+  "Facilities for testing stateful systems using state machines.
 
   Allows defining specially annotated state machines that can be used as the
   basis for generating test verification programs to validate stateful
@@ -17,21 +17,21 @@
      - A interpreter function (adapter between [[defstatem]] and an
        implementation). This function reads model state transitions and performs the
        appropriate behavior in an implementation.
-     - The implementation (the subject under test)
 
     The most important functions you need to understand are:
 
      - [[defstatem]] for defining state machines.
-     - [[cmd-seq]] for generating symbolic verification programs from a state
-                 machine.
-     - [[run-cmds]] for executing a symbolic program against code that needs to be
-                  tested against.
+     - [[cmd-seq]] for generating symbolic test programs from a state machine.
+     - [[run-cmds]] for executing a symbolic test program against code that
+                    needs to be verified. This is to compare the state machine
+                    behavior to a real implementation.
 
     There are some useful helper functions that aid in building & debugging
     state machines:
 
      - [[check!]] run some sanity checks against the state machine definition.
      - [[run-cmds-debug]] is a verbose printout version of [[run-cmds]].
+     - [[select-by-frequency]]] allows you to skew how [[cmd-seq]] generates commands.
   "
   (:require [clojure.set :as set]
             [clojure.string :as string]
@@ -150,7 +150,7 @@
         (:enqueue (assume [this model-state])
                   (args [this model-state])
                   (only-when [this model-state cmd-data])
-                  (advance [this model-state var-sym cmd-data])
+                  (advance [this model-state ret-sym cmd-data])
                   (verify [this model-state prev-mstate cmd-data return-value])))
 
     Here's the following implied parameters:
@@ -192,7 +192,7 @@
                         'Implied parameters' section above.
         - `cmd-data` refers to the generated command data from `args`.
   - `(advance [ret-sym cmd-data] ...)`
-        Return the next model state from executing this command. var-sym
+        Return the next model state from executing this command. ret-sym
         represents the symbolic value of the return value of from calling
         subject-under-test (but not yet realized).
 
@@ -737,13 +737,16 @@
     The data structure returned is a format that is intended:
 
     - To be somewhat human readable (since test.check prints this)
-    - To have enough the data to be used for shrinking commands
     - To have enough information in each statement for an interpreter function to operate
+    - To be pure data to allow them to be stored as regression test cases
     - To be fast at generating. State machine generation can be slow for large state machines.
 
-    For the last reason, this is the reason why the format should be considered
-    opaque. It may be useful for inspecting, but it should be considered 'no
-    warranty' behavior for depending on this result, say in a library.
+
+    SNAPSHOT limitations:
+
+    The last reason is why the format should be considered opaque. It may be
+    useful for inspecting, but it should be considered 'no warranty' behavior for
+    depending on this result, say in a library.
   "
   ([statem]
    (cmd-seq statem nil))
@@ -880,8 +883,7 @@
       :: (fn interpreter [cmd run-cmds-ctx])
         where
           cmd          :: [cmd-type & generated-cmd-args]
-          run-cmds-ctx :: {:keys [var-sym var-table]}
-          var-sym      :: VariableSymbol # opaque key for var-table
+          run-cmds-ctx :: {:keys [var-table]}
           var-table    :: {VariableSymbol value}
 
     Interpreter receives every command to execute and is expected to run against
@@ -891,6 +893,19 @@
     This function bridges the model state machine with a concrete implementation.
     Having this interpreter function also keeps the model state machines free
     from directly comparing to a specific imlementation.
+
+    `var-table` is a map of symbolic variables to concrete values. A symboli
+    value is in the form `[:var N]` in the command generation value:
+
+      [[:set [:var 1] [:upload \"foo\"]]
+       [:set [:var 2] [:result [:var 1]]]]
+
+    This allows the state machine and interpreter to hold/refer to stateful
+    references to from previous statements.
+
+    For the state machine side, look at [[advance]] to see ret-sym,
+    which is the symbolic reference to the return value of the command after
+    execution.
 
   **Example:**
 
@@ -939,8 +954,7 @@
            (let [[_ v [kind :as cmd]] (first rem-cmds)
                  c                    (lookup-command statem kind)
                  next-mstate          (advance c mstate v cmd)
-                 return-value         (interpreter cmd {:var-sym   v
-                                                        :var-table var-table})]
+                 return-value         (interpreter cmd {:var-table var-table})]
              (if (and (not (error? return-value))
                       (verify c next-mstate mstate cmd return-value))
                (recur (rest rem-cmds)
@@ -1052,8 +1066,7 @@
                                c            (lookup-command statem kind)
                                next-mstate  (advance c mstate v cmd)
                                _            (internal/run-step tracer stmt mstate next-mstate var-table)
-                               return-value (interpreter cmd {:var-sym   v
-                                                              :var-table var-table})
+                               return-value (interpreter cmd {:var-table var-table})
                                valid?       (and (not (error? return-value))
                                                  (verify c next-mstate mstate cmd return-value))]
                            (internal/run-return tracer stmt mstate next-mstate var-table return-value valid?)
@@ -1076,7 +1089,15 @@
      result)))
 
 (defn always-fn
-  "Function form of [[always]] macro. See the macro for more details."
+  "Function form of [[always]] macro. See the macro for more details.
+
+  **Parameters:**
+
+    - `f` **(function, 0-arity)**
+        The function to execute that returns a Result value (eg - [[run-cmds]])
+    - `n` **(optional, integer, default is 10)**
+        The number of times to repeatedly run a property to see if it failed.
+  "
   ([f] (always-fn 10 f))
   ([n f]
    (let [result         (f)]
