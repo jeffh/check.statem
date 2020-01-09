@@ -23,14 +23,24 @@ While you can naively do something like:
 (def kv-store-ops-generator (gen/vector (gen/one-of [get-generator put-generator])))
 ```
 
-test.check doesn't provide any way to generate a sequence of commands that's
-dependent on the previous implementation.. The above generator can only generate
-values if every operation is valid to perform at any time.
+It assumes a naive form of command generation, it's much more difficult to
+encode related behaviors across commands:
 
-For details about why this can be useful, check out the [talk by John
-Hughes](https://www.youtube.com/watch?v=zi0rHwfiX1Q). Unlike what John Hughes'
-demos, this library only supports serialized state machine testing (no parallel
-testing).
+- What if you always want `get` to fetch a key a previous `put` has placed?
+- What if you always want `put` to write to keys used yet?
+
+
+That's not even considering the shrinking behaviors:
+
+- How do you honor shrinking with the above constraints?
+  - eg - smaller sequences of commands should still have `get` to a key after `put`?
+- How do you ensure shrinking of related data
+  - If you're using test.check's `bind`, then full shrinking isn't honored
+
+For details about why state machine testing can be useful, check out the [talk
+by John Hughes](https://www.youtube.com/watch?v=zi0rHwfiX1Q). Unlike what John
+Hughes' demos, this library only supports serialized state machine testing (no
+parallel testing). Maybe someday in the future.
 
 ## Usage
 
@@ -188,3 +198,34 @@ Obviously, the large the system to test against, the greater difference between 
 Copyright © 2020 Jeff Hui
 
 Distributed under the Eclipse Public License version 1.0.
+
+
+## Wish / Consider / Todo List
+
+Interesting ideas to consider for the future of this library. This doesn't
+doesn't mean it'll be implemented, just for consideration:
+
+- [ ] Build generators from json schema
+- [ ] State Machine QOL
+  - [ ] Track & handle [[only-when]] implementation for commands that have dependent references
+  - [ ] Make it faster!
+  - [ ] Provide better debugging information when [[verify]] fails
+- [ ] Async Features
+  - [ ] Being able to encode "sleep" command with varable sleep interval (and shrink other commands to this)
+  - [ ] Be able to model / track "potential" commands for un-observable behaviors
+- [ ] Parallel State Machine Generation
+   - [ ] Prelude + 2 - 5 threads
+   - [ ] Shrinking with at-least (inverse of always)
+   - [ ] Cooperative scheduling
+     - [ ] Can control concurrent execution order via a value
+       - [ ] Which (obviously) can then get generated & shrunk
+       - [ ] Investigate some way to use compiler-like magic to automatically instrument concurrent execution
+- [ ] Documentation
+   - [ ] A getting start guide / tutorial
+   - [ ] More state machine examples in the test suite
+   - [ ] Internals - how shrinking works
+- [ ] Fancy things
+   - [ ] Logo?
+   - [ ] A proper website?
+   - [ ] A talk?
+      
