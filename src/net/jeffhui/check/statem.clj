@@ -810,7 +810,7 @@
                  e)))))
 
 (defn catch-print-interpreter
-  "Like [[catch-interprter]], but prints to stdout
+  "Like [[catch-interpreter]], but prints to stdout
 
   Using this decorator is equivalent to passing `{:catch? true}` to [[run-cmds]].
   "
