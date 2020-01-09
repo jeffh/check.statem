@@ -5,7 +5,7 @@
 ;; private use only
 (if #_trace= false
   (do
-    (def ^:private stats (agent {}))
+    (def stats (agent {}))
     (defmacro ^:no-doc ^{:style/indent 1} trace [name & body]
       `(let [n# ~name
              s# (System/nanoTime)
@@ -17,17 +17,32 @@
     (defn dump-trace
       "Internal use, do not use"
       []
-      (let [s (into []
-                    (map (fn [[k vs]]
-                           (let [times vs
-                                 s     (reduce + 0 times)]
-                             {:name  k
-                              :min   (apply min times)
-                              :max   (apply max times)
-                              :sum   s
-                              :count (count times)
-                              :avg   (int (double (/ s (count vs))))}))
-                         @stats))]
+      (let [st    @stats
+            s     (into []
+                        (map (fn [[k vs]]
+                               (let [times vs
+                                     s     (reduce + 0 times)]
+                                 {:name  k
+                                  :min   (apply min times)
+                                  :max   (apply max times)
+                                  :sum   s
+                                  :count (count times)
+                                  :avg   (int (double (/ s (count vs))))}))
+                             st))
+            total (reduce (fn [acc [_ vs]]
+                            (let [s (reduce + 0 vs)]
+                              (merge-with +
+                                          acc
+                                          {:sum   s
+                                           :count (count vs)})))
+                          {:name  :total
+                           :min   nil
+                           :max   nil
+                           :sum   0
+                           :count 0
+                           :avg   nil}
+                          st)
+            s     (conj s total)]
         (pprint/print-table (reverse (sort-by :sum s))))))
 
   (defmacro ^{:style/indent 1} trace [name & body]
@@ -57,6 +72,22 @@
   (run-return [_ stmt prev-mstate mstate var-table return-value valid?]
     (when print-return-values?
       (println "│   └ returned:" (pr-str return-value))))
+  (run-end [_ result]
+    (println "└" (if (:ok? result)
+                   "OK"
+                   "FAILED"))))
+
+(defrecord CmdRunAbridgedPrinter [print-return-values?]
+  CmdRunTracer
+  (run-start [_ cmds initial-mstate]
+    (println (format "┌ commands (%d)" (count cmds))))
+  (run-step [_ stmt mstate next-mstate var-table]
+    (print "│" (pr-str stmt))
+    (flush))
+  (run-return [_ stmt prev-mstate mstate var-table return-value valid?]
+    (if print-return-values?
+      (println " ->" (if valid? "ok" "failed") (pr-str return-value))
+      (println " ->" (if valid? "ok" "failed"))))
   (run-end [_ result]
     (println "└" (if (:ok? result)
                    "OK"

@@ -435,21 +435,73 @@
        (.substring (name var) (count "var-")))
       (catch NumberFormatException e nil))))
 
-(defn- shrink-valid-cmd-sequence? [initial-state statem cmds allowed-indicies]
-  (trace 'shrink-valid-cmd-sequence?
-    ;; cmds must be a vector
-    (loop [state            initial-state
-           allowed-indicies allowed-indicies
-           varindex         1]
-      (if (pos? (count allowed-indicies))
-        (let [[kind :as cmd] (last (cmds (first allowed-indicies)))
-              c              (lookup-command statem kind)]
-          (if (and (assume c state) (only-when c state cmd))
-            (recur (advance c state (varsym varindex) cmd)
-                   (rest allowed-indicies)
-                   (inc varindex))
-            false))
-        true))))
+(defn- shrink-valid-cmd-sequence?
+  ([initial-state statem cmds]
+   (trace 'shrink-valid-cmd-sequence?
+     ;; cmds must be a vector
+     ;; this is in hot path, outsize affect on cmd generation
+     (let [cnt (count cmds)]
+       (loop [i     0
+              state initial-state]
+         (if (< i cnt)
+           (let [stmt (cmds i)
+                 v    (stmt 1)
+                 cmd  (stmt 2)
+                 kind (cmd 0)
+                 c    (lookup-command statem kind)]
+             (if (and (assume c state) (only-when c state cmd))
+               (recur (inc i)
+                      (advance c state v cmd))
+               false))
+           true)))))
+  ([initial-state statem cmds allowed-indicies]
+   (trace 'shrink-valid-cmd-sequence?-with-allowed-indicies
+     ;; cmds must be a vector
+     ;; allowed-indicies must be a vector
+     ;; this is in hot path, outsize affect on cmd generation
+     (let [cnt (count allowed-indicies)]
+       (loop [state    initial-state
+              varindex 1]
+         (if (<= varindex cnt)
+           (let [[kind :as cmd] (last (cmds (allowed-indicies (dec varindex))))
+                 c              (lookup-command statem kind)]
+             (if (and (assume c state) (only-when c state cmd))
+               (recur (advance c state (varsym varindex) cmd)
+                      (inc varindex))
+               false))
+           true))))))
+
+
+(defn valid-cmd-seq?
+  "Returns true if a sequence of commands conforms to a state machine's requirements.
+
+  **Example:**
+
+      ;; for all of correct definitions of `queue-statem`, this should always pass
+      (for-all [cmds (cmd-seq queue-statem)]
+              (valid-cmd-seq? queue-statem cmd))
+  "
+  ([statem cmds] (valid-cmd-seq? statem cmds nil))
+  ([statem cmds {:keys [initial-state]}]
+   (trace 'valid-cmd-seq?
+     (loop [rem-cmds cmds
+            mstate   initial-state]
+       (if (pos? (count rem-cmds))
+         (let [[_ v [kind :as cmd]] (first rem-cmds)
+               c                    (lookup-command statem kind)
+               next-mstate          (try (advance c mstate v cmd)
+                                         (catch Exception e
+                                           ::error))]
+           (cond
+             (= ::error next-mstate) false
+
+             (try (assume c mstate)
+                  (catch Exception e
+                    false))
+             (recur (rest rem-cmds) next-mstate)
+
+             :else false))
+         true)))))
 
 (defn- realize-cmds
   [statem cmds indicies-to-keep]
@@ -470,8 +522,8 @@
                                       (loop [f   f
                                              idx idx]
                                         (cond (contains? vars f) f
-                                              (= 1 idx) nil
-                                              :else (recur (varsym (dec idx)) (dec idx))))
+                                              (= 1 idx)          nil
+                                              :else              (recur (varsym (dec idx)) (dec idx))))
                                       f)))
                                 (stmt 2))])))
         (transient [])
@@ -490,6 +542,7 @@
        (sequence ;; can reach OOM to realize this value non-lazily
         (comp
          (mapcat (partial combo/combinations indicies-to-keep))
+         (map vec)
          (filter (partial shrink-valid-cmd-sequence? initial-state statem cmds))
          (keep #(shrink-commands-size % initial-state statem cmds)))
         (range (count indicies-to-keep)))))))
@@ -500,9 +553,10 @@
   (trace 'shrink-commands-data
     (let [rt-cmds (mapv (comp ::rose-tree meta) cmds)]
       (rose/join
-       (rose/zip (fn [& cmds]
-                   (shrink-commands-size (vec (range 0 (count cmds))) initial-state statem (vec cmds)))
-                 rt-cmds)))))
+       (rose/fmap (fn [cmds] (shrink-commands-size (vec (range 0 (count cmds))) initial-state statem cmds))
+                  (rose/filter
+                   (partial shrink-valid-cmd-sequence? initial-state statem)
+                   (rose/zip vector rt-cmds)))))))
 
 (defn- shrink-commands
   "Creates a rose tree from an initial value of commands generated."
@@ -865,7 +919,7 @@
                 (verify [_ _ r] (= r (first (:items mstate))))))
 
       (for-all [cmds (cmd-seq queue-statem)]
-              (:pass? (run-cmds queue-statem cmds queue-interpreter)))
+               (run-cmds queue-statem cmds queue-interpreter))
   "
   ([^StateMachine statem cmds interpreter] (run-cmds statem cmds interpreter nil))
   ([^StateMachine statem cmds interpreter {:keys [initial-state catch?]
@@ -875,37 +929,34 @@
                   (vector? (first cmds))
                   (keyword (ffirst cmds)))
              "Invalid commands. Did you mean to remove one level of nesting from test results?")
-     (map->ExecutionResult
-      (let [interpreter (if catch?
-                          (catch-print-interpreter interpreter)
-                          interpreter)]
-        (loop [rem-cmds  cmds
-               mstate    initial-state
-               var-table {}]
-          (if (pos? (count rem-cmds))
-            (let [[_ v [kind :as cmd]] (first rem-cmds)
-                  c                    (lookup-command statem kind)
-                  next-mstate          (advance c mstate v cmd)
-                  return-value         (interpreter cmd {:var-sym   v
-                                                         :var-table var-table})]
-              (if (and (not (error? return-value))
-                       (verify c next-mstate mstate cmd return-value))
-                (recur (rest rem-cmds)
-                       next-mstate
-                       (if (nil? return-value)
-                         var-table
-                         (assoc var-table v return-value)))
-                {:pass?              false
-                 :ok?                false ;; TODO: GROT
-                 :cmds               cmds
-                 :last-cmd           cmd
-                 :vars               var-table
-                 :before-model-state mstate
-                 :after-model-state  next-mstate
-                 :return-value       return-value}))
-            {:pass? true
-             ;; TODO: GROT
-             :ok? true})))))))
+     (let [interpreter (if catch?
+                         (catch-print-interpreter interpreter)
+                         interpreter)]
+       (loop [rem-cmds  cmds
+              mstate    initial-state
+              var-table {}]
+         (if (pos? (count rem-cmds))
+           (let [[_ v [kind :as cmd]] (first rem-cmds)
+                 c                    (lookup-command statem kind)
+                 next-mstate          (advance c mstate v cmd)
+                 return-value         (interpreter cmd {:var-sym   v
+                                                        :var-table var-table})]
+             (if (and (not (error? return-value))
+                      (verify c next-mstate mstate cmd return-value))
+               (recur (rest rem-cmds)
+                      next-mstate
+                      (if (nil? return-value)
+                        var-table
+                        (assoc var-table v return-value)))
+               (->ExecutionResult
+                false
+                cmds
+                cmd
+                var-table
+                mstate
+                next-mstate
+                return-value)))
+           passed-execution-result))))))
 
 (defn print-failed-runs!
   [run-cmds-results]
@@ -939,7 +990,7 @@
       The initial state machine state. Should be the same as the one given to
       `cmd-seq`.
   - `mstate?` **(optional, bool)**
-      If true, print out the model state after each command. Defaults to false.
+      If true, print out the model state after each command. Defaults to true.
   - `return-value?` **(optional, bool)**
       If true, print out the return value for `verify` after each command.
       Defaults to true.
@@ -952,6 +1003,7 @@
       to stdout. Supported methods:
 
         - `:print` Prints data to stdout. Default value.
+        - `:print-short` Prints data to stdout in compact form. Ignores `:mstate?` option.
         - `:inspect` Emits data to clojure.inspector/inspect.
         - `:inspect-tree` Emits data to clojure.inspector/inspect-tree
         - `:inspect-table` Emits data to clojure.inspector/inspect-tabl
@@ -970,48 +1022,95 @@
             debug-method]
      :or   {return-value? true
             catch?        true
+            mstate?       true
             debug-method  :print}}]
-   (map->ExecutionResult
-    (let [interpreter (if catch?
-                        (catch-interpreter interpreter)
-                        interpreter)
-          tracer      (if (#{:inspect :inspect-tree :inspect-table} debug-method)
-                        (internal/->CmdRunInspector mstate? return-value? debug-method (atom nil))
-                        (internal/->CmdRunPrinter mstate? return-value?))
-          _           (internal/run-start tracer cmds nil)
-          result      (loop [rem-cmds  cmds
-                             mstate    initial-state
-                             var-table {}]
-                        (if (pos? (count rem-cmds))
-                          (let [[_ v [kind :as cmd] :as stmt]
-                                (first rem-cmds)
+   (let [interpreter (if catch?
+                       (catch-interpreter interpreter)
+                       interpreter)
+         tracer      (cond
+                       (#{:inspect :inspect-tree :inspect-table} debug-method)
+                       (internal/->CmdRunInspector mstate? return-value? debug-method (atom nil))
 
-                                c            (lookup-command statem kind)
-                                next-mstate  (advance c mstate v cmd)
-                                _            (internal/run-step tracer stmt mstate next-mstate var-table)
-                                return-value (interpreter cmd {:var-sym   v
-                                                               :var-table var-table})
-                                valid?       (and (not (error? return-value))
-                                                  (verify c next-mstate mstate cmd return-value))]
-                            (internal/run-return tracer stmt mstate next-mstate var-table return-value valid?)
-                            (if valid?
-                              (recur (rest rem-cmds)
-                                     next-mstate
-                                     (if (nil? return-value)
-                                       var-table
-                                       (assoc var-table v return-value)))
-                              {:ok?          false
-                               :pass?        false ;; TODO: GROT
-                               :cmds         cmds
-                               :vars         var-table
-                               :model-state  mstate
-                               :return-value return-value
-                               :cmd          cmd}))
-                          {:pass? true
-                           ;; TODO: GROT
-                           :ok? true}))]
-      (internal/run-end tracer result)
-      result))))
+                       (= :print debug-method) (internal/->CmdRunPrinter mstate? return-value?)
+
+                       (= :print-short debug-method) (internal/->CmdRunAbridgedPrinter return-value?)
+
+                       :else
+                       (throw (IllegalArgumentException. (str "Unsupported debug-method: " (pr-str debug-method)))))
+         _           (internal/run-start tracer cmds nil)
+         result      (loop [rem-cmds  cmds
+                            mstate    initial-state
+                            var-table {}]
+                       (if (pos? (count rem-cmds))
+                         (let [[_ v [kind :as cmd] :as stmt]
+                               (first rem-cmds)
+
+                               c            (lookup-command statem kind)
+                               next-mstate  (advance c mstate v cmd)
+                               _            (internal/run-step tracer stmt mstate next-mstate var-table)
+                               return-value (interpreter cmd {:var-sym   v
+                                                              :var-table var-table})
+                               valid?       (and (not (error? return-value))
+                                                 (verify c next-mstate mstate cmd return-value))]
+                           (internal/run-return tracer stmt mstate next-mstate var-table return-value valid?)
+                           (if valid?
+                             (recur (rest rem-cmds)
+                                    next-mstate
+                                    (if (nil? return-value)
+                                      var-table
+                                      (assoc var-table v return-value)))
+                             (->ExecutionResult
+                              false
+                              cmds
+                              cmd
+                              var-table
+                              mstate
+                              next-mstate
+                              return-value)))
+                         passed-execution-result))]
+     (internal/run-end tracer result)
+     result)))
+
+(defn always-fn
+  "Function form of [[always]] macro. See the macro for more details."
+  ([f] (always-fn 10 f))
+  ([n f]
+   (let [result         (f)]
+     (if (results/pass? result)
+       (if (zero? n)
+         result
+         (recur (dec n) f))
+       result))))
+
+(defmacro always
+  "Repeats a body that returns any clojure.test.check.results/Result conforming
+  value up to n times. Returns the first failing result encountered.
+
+  This is useful to verify that asynchronous / concurrent behavior doesn't cause
+  any flakey behavior.
+
+  Parameters:
+
+    - `body` **(expression)**
+        The form to execute that returns a Result value (eg - [[run-cmds]])
+    - `n` **(optional, integer, default is 10)**
+        The number of times to repeatedly run a property to see if it failed.
+
+  Notes:
+
+    Papers from the Erlang QuickCheck implementation mention `n=10` is a
+    'practically good enough' value. Lower values of `n` risk not finding flaky
+    behavior, but higher values of `n` will require more executions (and take more
+    time to complete).
+
+
+  Example:
+
+    (always (run-cmds statem cmds interpreter))
+
+  "
+  ([body] `(always-fn (fn [] ~body)))
+  ([n body] `(always-fn ~n (fn [] ~body))))
 
 (defn- denamespace-syms [form]
   (walk/postwalk
@@ -1034,7 +1133,7 @@
 
   ;; checks by generating programs
   (let [num-cmds (count (.commands statem))
-        programs (gen/sample (cmd-seq statem {:size num-cmds}) (* num-cmds 2))]
+        programs (gen/sample (cmd-seq statem {:size num-cmds}) (* num-cmds 10))]
     ;; generator destructuring check
     (doseq [stmts programs
             [_ _ [cmd-name :as cmd]] stmts
@@ -1092,18 +1191,3 @@
       (assert (empty? diff)
               (str "Expected to generate all commands, but didn't. Commands that didn't get generated: "
                    (pr-str diff))))))
-
-(defn always*
-  "Function form of [[always]] macro."
-  [n f]
-  (let [result (f)]
-    (if (results/pass? result)
-      (if (zero? n)
-        result
-        (recur (dec n) f))
-      result)))
-
-(defmacro always
-  "Repeats a property (or any generated val)"
-  ([body] `(always* 10 (fn [] ~body)))
-  ([n body] `(always* ~n (fn [] ~body))))

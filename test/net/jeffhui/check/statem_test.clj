@@ -1,5 +1,5 @@
 (ns net.jeffhui.check.statem-test
-  (:require [clojure.test :refer [testing deftest is]]
+  (:require [clojure.test :as clojure-test :refer [testing deftest is]]
             [net.jeffhui.check.statem :as statem :refer [defstatem cmd-seq run-cmds run-cmds-debug select-by-frequency check!]]
             [clojure.test.check :as tc]
             [clojure.test.check.clojure-test :refer [defspec]]
@@ -8,7 +8,8 @@
             [clojure.test.check.random :as random]
             [clojure.test.check.rose-tree :as rose-tree]
             [clojure.walk :as walk]
-            [clojure.test.check.rose-tree :as rose]))
+            [clojure.test.check.rose-tree :as rose]
+            [clojure.test.check.results :as results]))
 
 (defn- generate-rt
   ([generator]
@@ -109,9 +110,33 @@
   (for-all [cmds (cmd-seq queue-statem)]
            (statem/valid-cmd-seq? queue-statem cmds)))
 
+(deftest always-fails-if-at-least-one-failure-occurs
+  (let [state (atom 0)]
+    (is (every? false?
+                (map :result
+                     (rose-tree/seq
+                      (generate-rt
+                       (for-all [i gen/int]
+                                (statem/always
+                                 (pos? (mod (swap! state inc) 5)))))))))))
+
+
+(comment
+  (clojure-test/test-var #'shrinking-always-conforms-to-statem)
+
+  (send net.jeffhui.check.statem.internal/stats (constantly nil))
+  @net.jeffhui.check.statem.internal/stats
+  (net.jeffhui.check.statem.internal/dump-trace)
+
+  (double (/ 2884093872 1000000000))
+
+  )
+
 #_
-(doseq [r (rose/seq (generate-rt (cmd-seq queue-statem) 4))]
+(doseq [r (rose/seq (generate-rt (cmd-seq queue-statem) 5))]
   (clojure.pprint/pprint r))
+
+
 
 (deftest shrinking-always-conforms-to-statem
   (dotimes [i 100]
@@ -127,7 +152,7 @@
 
 (defspec queue-program-generation-using-fair-distribution 100
   (for-all [cmds (cmd-seq queue-statem)]
-           (:ok? (run-cmds queue-statem cmds queue-runner))))
+           (run-cmds queue-statem cmds queue-runner)))
 
 (defspec queue-program-generation-using-custom-distribution 100
   (for-all [cmds (cmd-seq queue-statem {:select-generator (select-by-frequency {:new     100
@@ -143,7 +168,7 @@
                     (:deque f 0))
                  3)
               ;; also, this should still pass against our queue
-              (:ok? (run-cmds queue-statem cmds queue-runner))))))
+              (run-cmds queue-statem cmds queue-runner)))))
 
 (defn- macroexpand-thrown? [form]
   (try
