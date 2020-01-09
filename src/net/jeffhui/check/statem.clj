@@ -1093,14 +1093,14 @@
   This is useful to verify that asynchronous / concurrent behavior doesn't cause
   any flakey behavior.
 
-  Parameters:
+  **Parameters:**
 
     - `body` **(expression)**
         The form to execute that returns a Result value (eg - [[run-cmds]])
     - `n` **(optional, integer, default is 10)**
         The number of times to repeatedly run a property to see if it failed.
 
-  Notes:
+  **Notes:**
 
     Papers from the Erlang QuickCheck implementation mention `n=10` is a
     'practically good enough' value. Lower values of `n` risk not finding flaky
@@ -1108,7 +1108,7 @@
     time to complete).
 
 
-  Example:
+  **Example:**
 
     (always (run-cmds statem cmds interpreter))
 
