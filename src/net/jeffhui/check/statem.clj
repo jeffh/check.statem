@@ -959,16 +959,20 @@
            passed-execution-result))))))
 
 (defn print-failed-runs!
+  "A helper function thar prints execution results if a run has failed. Useful to scan and see all failing tests.
+  Returns the execution result.
+
+  (print-failed-runs! (run-cmd statem cmds interpreter))
+  "
   [run-cmds-results]
   (let [results run-cmds-results]
-    (if (results/pass? results)
-      results
+    (when-not (results/pass? results)
       (do (println "-----FAIL------")
           (println)
-          (pprint/pprint run-cmds-results)
+          (pprint/pprint (into {} run-cmds-results))
           (println)
-          (println "======END=======")
-          false))))
+          (println "======END=======")))
+    results))
 
 (defn run-cmds-debug
   "Identical to [[run-cmds]], but prints out data related to each command executed.
