@@ -147,7 +147,7 @@
     every method body. For conciseness, this is defined once instead of having to
     repeat it for every command. Otherwise state machine definitions would look like:
 
-    ``clojure
+    ```clojure
     ;; NOTE: invalid code, do not use
     (defstatem queue-statem
       (:enqueue (assume [this model-state])
