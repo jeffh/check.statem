@@ -1176,10 +1176,10 @@
 
   ### Parameters
 
-    - `f` **(function, 0-arity)**
-        The function to execute that returns a Result value (eg - [[run-cmds]])
-    - `n` **(optional, integer, default is 10)**
-        The number of times to repeatedly run a property to see if it failed.
+  | key      | required? | expected type    | description     |
+  | -------- | --------- | ---------------- | --------------- |
+  | `f`      | required  | `(fn [] ...)`    | The function to execute that returns a Result value (eg - [[run-cmds]])
+  | `n`      | optional  | positive integer | The number of times to repeatedly run a property to see if it failed.
   "
   ([f] (always-fn 10 f))
   ([n f]
@@ -1191,7 +1191,7 @@
        result))))
 
 (defmacro always
-  "Repeats a body that returns any clojure.test.check.results/Result conforming
+  "Repeats a body that returns any [[clojure.test.check.results/Result]] conforming
   value up to n times. Returns the first failing result encountered.
 
   This is useful to verify that asynchronous / concurrent behavior doesn't cause
@@ -1199,10 +1199,10 @@
 
   ### Parameters
 
-    - `body` **(expression)**
-        The form to execute that returns a Result value (eg - [[run-cmds]])
-    - `n` **(optional, integer, default is 10)**
-        The number of times to repeatedly run a property to see if it failed.
+  | key      | required? | expected type    | description     |
+  | -------- | --------- | ---------------- | --------------- |
+  | `body`   | required  | expression       | The form to execute that returns a Result value (eg - [[run-cmds]])
+  | `n`      | optional  | positive integer | The number of times to repeatedly run a property to see if it failed.
 
   **Notes:**
 
@@ -1214,7 +1214,9 @@
 
   **Example:**
 
-    (always (run-cmds statem cmds interpreter))
+  ```clojure
+  (always (run-cmds statem cmds interpreter))
+  ```
 
   "
   ([body] `(always-fn (fn [] ~body)))
@@ -1232,7 +1234,7 @@
          (recur (dec n) f))))))
 
 (defmacro sometimes
-  "Repeats a body that returns any clojure.test.check.results/Result conforming
+  "Repeats a body that returns any [[clojure.test.check.results/Result]] conforming
   value up to n times. Returns failure if only every try also fails.
 
   This is useful to verify that asynchronous / concurrent behavior that you want
@@ -1240,16 +1242,16 @@
 
   ### Parameters
 
-    - `body` **(expression)**
-        The form to execute that returns a Result value (eg - [[run-cmds]])
-    - `n` **(optional, integer, default is 10)**
-        The number of times to repeatedly run a property to see if it failed.
+  | key      | required? | expected type    | description     |
+  | -------- | --------- | ---------------- | --------------- |
+  | `body`   | required  | expression       | The form to execute that returns a Result value (eg - [[run-cmds]])
+  | `n`      | optional  | positive integer | The number of times to repeatedly run a property to see if it always fails.
 
   ### Example
 
-    ```clojure
-    (sometimes (run-cmds statem cmds interpreter))
-    ```
+  ```clojure
+  (sometimes (run-cmds statem cmds interpreter))
+  ```
 
   "
   ([body] `(sometimes-fn (fn [] ~body)))
