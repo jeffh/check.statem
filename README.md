@@ -121,7 +121,7 @@ imperiative form similar to:
 ```clojure
 (do
   (def v1 (put :W4 {}))
-  (def v2 (put :W4)))
+  (def v2 (get :W4)))
 ```
 
 Then, to compare the model against an implementation in tests, we need
@@ -132,11 +132,12 @@ to use against an actual implementation:
 ;; based on the example data above, the inner function will be called twice with cmd being:
 ;;   cmd = [:put :W4 {}], ctx = {}
 ;;   cmd = [:get :W4], ctx = {:var-table {[:var 1] nil}}
-(defn kv-interpreter [state]
-  (fn [cmd ctx]
-    (case (first cmd)
-      :put (swap! state conj (vec (rest cmd)))
-      :get (second (first  (filter (comp (partial = (second cmd)) first) @state))))))
+(defn kv-interpreter []
+  (let [state (atom [])]
+    (fn interpreter [cmd ctx]
+      (case (first cmd)
+        :put (swap! state conj (vec (rest cmd)))
+        :get (second (first  (filter (comp (partial = (second cmd)) first) @state)))))))
 ```
 
 Finally, run it:
@@ -148,21 +149,32 @@ Finally, run it:
 (defspec kv-spec 100
   (for-all
    [cmds (cmd-seq key-value-statem)]
-   (run-cmds key-value-statem cmds (kv-interpreter (atom [])))))
+   (run-cmds key-value-statem cmds (kv-interpreter))))
 ```
 
-If you run it, you'll get a test failure similar to this value:
+If you run it a few times, you'll get a test failure similar to this value:
 
 ```clojure
-[[:set [:var 16] [:put :A -1]]
+[[:set [:var 16] [:put :A 0]]
  [:set [:var 17] [:put :A 1]]
  [:set [:var 18] [:get :A]]]
 ```
 
 This is a minimal test case that produces the failure of our implementation (in
-`kv-interpreter`). We can update the implementation to fix the test.
+`kv-interpreter`). We can update the implementation to fix the test:
 
-Obviously, the large the system to test against, the greater difference between
+
+```clojure
+(defn kv-interpreter []
+  (let [state (atom [])]
+    (fn interpreter [cmd ctx]
+      (case (first cmd)
+        :put (swap! state conj (vec (rest cmd)))
+        :get (second (last (filter (comp (partial = (second cmd)) first) @state)))))))
+        ;;            ^^^^ replace 'first' to 'last'
+```
+
+Obviously, the larger the system to test against, the greater difference between
 the model implementation and the production implemention will typically be.
 Small examples typically produce the similar sizes of implementations.
 

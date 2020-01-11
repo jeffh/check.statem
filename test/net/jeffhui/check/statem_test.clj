@@ -254,3 +254,40 @@
   (clojure.test/test-var #'net.jeffhui.check.statem-test/queue-program-generation-using-fair-distribution)
   (net.jeffhui.check.statem/dump-trace)
   )
+
+(defstatem key-value-statem ;; name of the state machine
+  [mstate] ;; the internal model state -- starts as nil
+  ;; define transitions
+  (:put ;; name of the transition
+    (args [] [gen/keyword (gen/scale #(int (/ % 10)) gen/any-printable-equatable)]) ;; associated data generators for this transition
+    (advance [_ [_ k value]] ;; next-mstate given the generated data and the current mstate
+      (assoc mstate k value)))
+  (:get
+    ;; precondition for this transition to be utilized (here: we must have stored something)
+    (assume [] (pos? (count mstate)))
+    (args [] [(gen/elements (keys mstate))]) ;; generate values from model state
+    ;; postcondition assertion: check model state against the return value of the subject-under-test
+    ;; implementation.
+    (verify [_ [_ k] return-value]
+      (= (mstate k) return-value))))
+
+;; bad version
+#_
+(defn kv-interpreter []
+  (let [state (atom [])]
+    (fn interpreter [cmd ctx]
+      (case (first cmd)
+        :put (swap! state conj (vec (rest cmd)))
+        :get (second (first (filter (comp (partial = (second cmd)) first) @state)))))))
+
+(defn kv-interpreter []
+  (let [state (atom [])]
+    (fn interpreter [cmd ctx]
+      (case (first cmd)
+        :put (swap! state conj (vec (rest cmd)))
+        :get (second (last (filter (comp (partial = (second cmd)) first) @state)))))))
+
+(defspec kv-spec 400
+  (for-all
+   [cmds (cmd-seq key-value-statem)]
+   (run-cmds key-value-statem cmds (kv-interpreter))))
