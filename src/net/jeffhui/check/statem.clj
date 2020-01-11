@@ -833,28 +833,38 @@
 (defn- error? [e]
   (boolean (::fail-fast (ex-data e))))
 
+(defrecord HistoryEntry [valid? mstate cmd return-value var-table])
+
+(defn str-history-entry
+  "Returns a print-friendly output of a history entry"
+  [^HistoryEntry v]
+  (format "%s %s -> %s"
+          (if (:valid? v)
+            "(✓)"
+            "(x)")
+          (pr-str (:cmd v))
+          (pr-str (:return-value v))))
+
 ;; Represents an execution result
 ;; Note: newer versions may add more fields
-(defrecord ExecutionResult [pass? cmds last-cmd vars before-model-state after-model-state return-value]
+(defrecord ExecutionResult [pass? cmds history]
   results/Result
   (pass? [m] (:pass? m))
   (result-data [m] m))
-
-(def ^:private passed-execution-result
-  (->ExecutionResult true
-                     nil
-                     nil
-                     nil
-                     nil
-                     nil
-                     nil))
 
 (defn run-cmds
   "Executes the symbolic representation of a sequence of commands using an
   interpreter.
 
-  Returns a map about the execution result. Always returns a map with a key
-  `:pass?` to indicate if the test program succeeded or failed.
+  Returns:
+
+    An ExecutionResult record. Always returns a map with a key `:pass?` to
+    indicate if the test program succeeded or failed. Alternatively, you can use
+    `clojure.test.check.results/pass?` to resolve to true. This means simply
+    returning this value to `for-all` will work as expected (by checking `:pass?`).
+
+    ExecutionResult contains the execution history that can be useful for debugging.
+    See [[when-failed!]] macro for example usage.
 
   Parameters:
 
@@ -949,44 +959,99 @@
                          interpreter)]
        (loop [rem-cmds  cmds
               mstate    initial-state
-              var-table {}]
+              var-table {}
+              history   (transient [])]
          (if (pos? (count rem-cmds))
-           (let [[_ v [kind :as cmd]] (first rem-cmds)
+           (let [[_ v [kind :as cmd]] (rem-cmds 0)
                  c                    (lookup-command statem kind)
                  next-mstate          (advance c mstate v cmd)
                  return-value         (interpreter cmd {:var-table var-table})]
              (if (and (not (error? return-value))
                       (verify c next-mstate mstate cmd return-value))
-               (recur (rest rem-cmds)
+               (recur (subvec rem-cmds 1)
                       next-mstate
                       (if (nil? return-value)
                         var-table
-                        (assoc var-table v return-value)))
-               (->ExecutionResult
-                false
-                cmds
-                cmd
-                var-table
-                mstate
-                next-mstate
-                return-value)))
-           passed-execution-result))))))
+                        (assoc var-table v return-value))
+                      (conj! history (->HistoryEntry true mstate cmd return-value var-table)))
+               (->ExecutionResult false cmds
+                                  (persistent! (conj! history
+                                                      (->HistoryEntry false mstate cmd
+                                                                      return-value var-table))))))
+           (->ExecutionResult true cmds (persistent! history))))))))
+
+(defmacro ^{:style/indent [1]} when-failed!
+  "Executes a given body when a execution fails. Useful for printing debugging information.
+
+  You may prefer [[print-failed-runs!]] if you want something quick to print out on failure.
+
+  Shorthand, for:
+
+      (let [result ~execution-result]
+        (when-not (clojure.test.check.results/pass? result)
+          (let [~bindings [(:history result) (:cmds result)]]
+            ~@body)))
+
+  This useful for debugging failures.
+
+  Example:
+
+      (for-all [cmd (cmd-seq queue-statem)]
+        (when-failed! (run-cmds queue-statem cmds interpreter)
+          [history cmds]
+          (println \"FAILED\")
+          (doseq [entry history]
+            (println \" \" (str-history-entry entry)))))
+  "
+  [execution-result bindings & body]
+  (assert (vector? bindings) "bindings must be a vector of one or two variables")
+  (assert (<= 1 (count bindings) 2) "bindings only supports one or two variables (history, cmds)")
+  `(let [r# ~execution-result]
+     (when-not (results/pass? r#)
+       (let [~bindings [(:history r#) (:cmds r#)]]
+         ~@body))
+     r#))
 
 (defn print-failed-runs!
-  "A helper function thar prints execution results if a run has failed. Useful to scan and see all failing tests.
-  Returns the execution result.
+  "A helper function thar prints execution results if a run has failed. Useful
+  to scan and see all failing tests. For convinence, only prints small, failing
+  executions by default.
 
-  (print-failed-runs! (run-cmd statem cmds interpreter))
+  Returns the execution result given.
+
+  Parameters:
+
+    - `max-size` **(optional, integer)**
+        If set, only prints history sizes less than or equal to this max size. Defaults to 10.
+        Setting this to nil will print any sized failure.
+    - `mstate?` **(optional, boolean)**
+        If true, prints the model state for each executed command. Defaults to false.
+    - `
+
+  Example:
+
+      (print-failed-runs! (run-cmd statem cmds interpreter))
+      (print-failed-runs! {:mstate? true} (run-cmd statem cmds interpreter))
+
+
+  If you're looking to do something on failure, see the [[when-failed!]] macro.
   "
-  [run-cmds-results]
-  (let [results run-cmds-results]
-    (when-not (results/pass? results)
-      (do (println "-----FAIL------")
-          (println)
-          (pprint/pprint (into {} run-cmds-results))
-          (println)
-          (println "======END=======")))
-    results))
+  ([execution-result] (print-failed-runs! nil execution-result))
+  ([{:keys [mstate? max-size]
+     :or   {mstate? false
+            max-size 10}}
+    execution-result]
+   (when-failed! execution-result
+     [history cmds]
+     (when (or (nil? max-size) (<= (count history) max-size))
+       (println "-----FAIL------")
+       (println)
+       (doseq [entry history]
+         (println " " (str-history-entry entry))
+         (when mstate?
+           (println "      └" (pr-str (:mstate entry)))))
+       (println)
+       (println "======END=======")))))
 
 (defn run-cmds-debug
   "Identical to [[run-cmds]], but prints out data related to each command executed.
@@ -1058,7 +1123,8 @@
          _           (internal/run-start tracer cmds nil)
          result      (loop [rem-cmds  cmds
                             mstate    initial-state
-                            var-table {}]
+                            var-table {}
+                            history   (transient [])]
                        (if (pos? (count rem-cmds))
                          (let [[_ v [kind :as cmd] :as stmt]
                                (first rem-cmds)
@@ -1075,16 +1141,13 @@
                                     next-mstate
                                     (if (nil? return-value)
                                       var-table
-                                      (assoc var-table v return-value)))
-                             (->ExecutionResult
-                              false
-                              cmds
-                              cmd
-                              var-table
-                              mstate
-                              next-mstate
-                              return-value)))
-                         passed-execution-result))]
+                                      (assoc var-table v return-value))
+                                    (conj! history (->HistoryEntry true mstate cmd return-value var-table)))
+                             (->ExecutionResult false cmds
+                                                (persistent! (conj! history
+                                                                    (->HistoryEntry false mstate cmd
+                                                                                    return-value var-table))))))
+                         (->ExecutionResult true cmds (persistent! history))))]
      (internal/run-end tracer result)
      result)))
 
@@ -1150,7 +1213,7 @@
 
 (defmacro sometimes
   "Repeats a body that returns any clojure.test.check.results/Result conforming
-  value up to n times. Returns the any passing result encountered.
+  value up to n times. Returns failure if only every try also fails.
 
   This is useful to verify that asynchronous / concurrent behavior that you want
   to shrink to a reliably reproducable failure.

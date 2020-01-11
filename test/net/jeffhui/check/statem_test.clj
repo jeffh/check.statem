@@ -278,7 +278,7 @@
   [mstate] ;; the internal model state -- starts as nil
   ;; define transitions
   (:put ;; name of the transition
-    (args [] [gen/keyword (gen/scale #(int (/ % 10)) gen/any-printable-equatable)]) ;; associated data generators for this transition
+    (args [] [gen/keyword (gen/scale #(int (/ % 10)) gen/int)]) ;; associated data generators for this transition
     (advance [_ [_ k value]] ;; next-mstate given the generated data and the current mstate
       (assoc mstate k value)))
   (:get
@@ -309,4 +309,7 @@
 (defspec kv-spec 400
   (for-all
    [cmds (cmd-seq key-value-statem)]
-   (run-cmds key-value-statem cmds (kv-interpreter))))
+   (statem/print-failed-runs!
+    (run-cmds key-value-statem cmds (kv-interpreter)))))
+
+#_(net.jeffhui.check.statem.internal/dump-trace)
