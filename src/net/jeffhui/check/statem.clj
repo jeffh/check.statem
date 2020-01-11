@@ -126,20 +126,20 @@
 
   # Example:
 
-  ```clojure
-  (defstatem queue-statem
-    \"A basic queue state machine\"
-    [mstate this]  ; -> state machine's model state is available in all commands
+    ```clojure
+    (defstatem queue-statem
+      \"A basic queue state machine\"
+      [mstate this]  ; -> state machine's model state is available in all commands
 
-    ;; define commands for the state machine
-    (:enqueue (args [] gen/any-printable)
-              (advance [return-sym [cmd-name item]] ((fnil conj []) mstate item))
-              (verify [prev-mstate [cmd-name item] ret] ret))
+      ;; define commands for the state machine
+      (:enqueue (args [] gen/any-printable)
+                (advance [return-sym [cmd-name item]] ((fnil conj []) mstate item))
+                (verify [prev-mstate [cmd-name item] ret] ret))
 
-    (:dequeue (assume [] (pos? (count mstate)))
-              (advance [_ _] (subvec mstate 1))
-              (verify [_ _ return-value] (= return-value (first mstate)))))
-  ```
+      (:dequeue (assume [] (pos? (count mstate)))
+                (advance [_ _] (subvec mstate 1))
+                (verify [_ _ return-value] (= return-value (first mstate)))))
+    ```
 
   # Implied parameters
 
@@ -296,10 +296,12 @@
 (defn list-commands
   "Returns a sequence of keywords indicating available command names for the state machine.
 
-  **Example:**
+  # Example
 
-      (list-commands queue-statem)
-      ;; => [:new :enqueue :dequeue]
+    ```clojure
+    (list-commands queue-statem)
+    ;; => [:new :enqueue :dequeue]
+    ```
   "
   [^StateMachine statem]
   (keys (.commands statem)))
@@ -308,10 +310,13 @@
   "Returns a command that that matches a given interface. Throws if the command
   does not exist unless a default value is given.
 
-  **Example:**
+  # Example
 
-      (lookup-command queue-statem :new)
-      ;; => <instance conforming to Command>
+    ```clojure
+    (lookup-command queue-statem :new)
+    ;; => <instance conforming to Command>
+    ```
+
   "
   ([^StateMachine statem command-name]
    (trace 'lookup-command
@@ -346,17 +351,19 @@
        - `args` returns `nil`. AKA: `(gen/tuple (gen/return command-name-kw))`
        - `verify` returns `true`
 
-  **Example:**
+  # Example
 
-      (defstatem set-statem)
+    ```clojure
+    (defstatem set-statem)
 
-      (defcommand set-statem :add [mstate]
-        (args [] [gen/integer])
-        (advance [_ [_ value]] (conj (set mstate) value)))
+    (defcommand set-statem :add [mstate]
+      (args [] [gen/integer])
+      (advance [_ [_ value]] (conj (set mstate) value)))
 
-      (defcommand set-statem :has [mstate]
-        (args [] [gen/integer])
-        (verify [_ [_ value]] (contains? (mstate) value)))
+    (defcommand set-statem :has [mstate]
+      (args [] [gen/integer])
+      (verify [_ [_ value]] (contains? (mstate) value)))
+    ```
 
   "
   [table-name cmd-name [model-state this :as shared-bindings] & methods]
@@ -492,11 +499,13 @@
 (defn valid-cmd-seq?
   "Returns true if a sequence of commands conforms to a state machine's requirements.
 
-  **Example:**
+  # Example
 
-      ;; for all of correct definitions of `queue-statem`, this should always pass
-      (for-all [cmds (cmd-seq queue-statem)]
-              (valid-cmd-seq? queue-statem cmd))
+    ```clojure
+    ;; for all of correct definitions of `queue-statem`, this should always pass
+    (for-all [cmds (cmd-seq queue-statem)]
+            (valid-cmd-seq? queue-statem cmd))
+    ```
   "
   ([statem cmds] (valid-cmd-seq? statem cmds nil))
   ([statem cmds {:keys [initial-state]}]
@@ -657,14 +666,16 @@
 (def select-by-any
   "A helper that simply returns a generator that picks commands randomly.
 
-  **Note:**
+  # Note
 
     Based on how cmd-seq works, this frequency is affected by the constraints
     which the command can be valid as defined by the state machine.
 
-  **Example:**
+  # Example
 
-      (cmd-seq statem {:select-generator select-by-any})
+    ```clojure
+    (cmd-seq statem {:select-generator select-by-any})
+    ```
   "
   (select-cmds (comp gen/one-of vals)))
 
@@ -675,16 +686,18 @@
   The likelihood is determined by taking the value divided by the sum of all
   likelihoods.
 
-  **Note:**
+  # Note
 
     Based on how cmd-seq works, this frequency is affected by the constraints
     which the command can be valid as defined by the state machine.
 
-  **Example:**
+  # Example
 
-      (cmd-seq statem {:select-generator (select-by-frequency {:new    1000
-                                                               :add    100
-                                                               :remove 10})})
+    ```clojure
+    (cmd-seq statem {:select-generator (select-by-frequency {:new    1000
+                                                              :add    100
+                                                              :remove 10})})
+    ```
   "
   [cmd-kw->count]
   (select-cmds #(gen/frequency (mapv (fn [[k c]]
@@ -696,7 +709,7 @@
   given state machine. Shrinking removes commands from the sequence while still
   conforming to the state machine.
 
-  **Parameters:**
+  # Parameters
 
   - `statem` **(required, StateMachine)**
       The state machine that the sequence of commands must conform to.
@@ -718,16 +731,19 @@
       The initial state when the state machine starts. Should be the same as
       the one given to [[run-cmds]].
 
-  **Example:**
+  # Example
 
-      (defn queue-interpreter [cmd run-cmd-ctx] ...)
 
-      (for-all [cmds (cmd-seq queue-statem)]
-        (:pass? (run-cmds queue-statem cmds queue-interpreter)))
+    ```clojure
+    (defn queue-interpreter [cmd run-cmd-ctx] ...)
+
+    (for-all [cmds (cmd-seq queue-statem)]
+      (:pass? (run-cmds queue-statem cmds queue-interpreter)))
+    ```
 
     For a more thorough example, check out [[run-cmds]].
 
-  **Generated Values:**
+  # Generated Values
 
     *An opaque value to pass to [[run-cmds]]. The structure may change in the
     SNAPSHOT versions.*
@@ -735,21 +751,25 @@
     Technically, returns a sequence of commands are in single-assignment
     statement form:
 
+      ```clojure
       [
         [:set [:var 1] ...]
         [:set [:var 2] ...]
         [:set [:var 3] ...]
         ...
       ]
+      ```
 
     Where `[:var N]` is a return value from running a given statement. This is
     abstract representation akin to this in Clojure:
 
+      ```clojure
       (do
         (def var1 ...)
         (def var2 ...)
         (def var3 ...)
         ...)
+      ```
 
     The data structure returned is a format that is intended:
 
@@ -783,11 +803,13 @@
 (defn valid-cmd-seq?
   "Returns true if a sequence of commands conforms to a state machine's requirements.
 
-  **Example:**
+  # Example
 
-      ;; for all of correct definitions of `queue-statem`, this should always pass
-      (for-all [cmds (cmd-seq queue-statem)]
-              (valid-cmd-seq? queue-statem cmd))
+    ```clojure
+    ;; for all of correct definitions of `queue-statem`, this should always pass
+    (for-all [cmds (cmd-seq queue-statem)]
+            (valid-cmd-seq? queue-statem cmd))
+    ```
   "
   ([statem cmds] (valid-cmd-seq? statem cmds nil))
   ([statem cmds {:keys [initial-state]}]
@@ -873,7 +895,7 @@
   "Executes the symbolic representation of a sequence of commands using an
   interpreter.
 
-  **Returns:**
+  # Returns
 
     An ExecutionResult record. Always returns a map with a key `:pass?` to
     indicate if the test program succeeded or failed. Alternatively, you can use
@@ -883,7 +905,7 @@
     ExecutionResult contains the execution history that can be useful for debugging.
     See [[when-failed!]] macro for example usage.
 
-  **Parameters:**
+  # Parameters
 
   - `statem` **(required, StateMachine)**
       The state machine needed to verify behavior against.
@@ -905,7 +927,7 @@
       the runner to minimize the failure, but may lose the original stacktrace.
       Defaults to true.
 
-  **Interpreter:**
+  # Interpreter
 
       :: (fn interpreter [cmd run-cmds-ctx])
         where
@@ -934,34 +956,36 @@
     which is the symbolic reference to the return value of the command after
     execution.
 
-  **Example:**
+  # Example
 
-      ;; elided: TestQueue implementation
-      (defn queue-runner [cmd {:keys [varsym var-table]}]
-        (case (first cmd)
-          :new     (TestQueue. [] (second cmd))
-          :enqueue (.enqueue ^IQueue (var-table (second cmd)) (nth cmd 2))
-          :deque   (.dequeue ^IQueue (var-table (second cmd)))))
+    ```clojure
+    ;; elided: TestQueue implementation
+    (defn queue-runner [cmd {:keys [varsym var-table]}]
+      (case (first cmd)
+        :new     (TestQueue. [] (second cmd))
+        :enqueue (.enqueue ^IQueue (var-table (second cmd)) (nth cmd 2))
+        :deque   (.dequeue ^IQueue (var-table (second cmd)))))
 
-      (defstatem queue-statem
-        [mstate]
-        (:new (assume [] (nil? mstate))
-              (args [] [gen/pos-int])
-              (advance [v [_ n]] {:items    []
-                                  :capacity n
-                                  :ref      v}))
-        (:enqueue (assume [] (and (not (nil? mstate))
-                                  (< (count (mstate :items)) (mstate :capacity))))
-                  (args [] [(gen/return (:ref mstate)) gen/int])
-                  (advance [v [_ _ n]] (update mstate :items conj n)))
-        (:deque (assume [] (and (not (nil? mstate))
-                                (pos? (count (mstate :items)))))
-                (advance [_ _] (update mstate :items subvec 1))
-                (args [] [(gen/return (:ref mstate))])
-                (verify [_ _ r] (= r (first (:items mstate))))))
+    (defstatem queue-statem
+      [mstate]
+      (:new (assume [] (nil? mstate))
+            (args [] [gen/pos-int])
+            (advance [v [_ n]] {:items    []
+                                :capacity n
+                                :ref      v}))
+      (:enqueue (assume [] (and (not (nil? mstate))
+                                (< (count (mstate :items)) (mstate :capacity))))
+                (args [] [(gen/return (:ref mstate)) gen/int])
+                (advance [v [_ _ n]] (update mstate :items conj n)))
+      (:deque (assume [] (and (not (nil? mstate))
+                              (pos? (count (mstate :items)))))
+              (advance [_ _] (update mstate :items subvec 1))
+              (args [] [(gen/return (:ref mstate))])
+              (verify [_ _ r] (= r (first (:items mstate))))))
 
-      (for-all [cmds (cmd-seq queue-statem)]
-               (run-cmds queue-statem cmds queue-interpreter))
+    (for-all [cmds (cmd-seq queue-statem)]
+              (run-cmds queue-statem cmds queue-interpreter))
+    ```
   "
   ([^StateMachine statem cmds interpreter] (run-cmds statem cmds interpreter nil))
   ([^StateMachine statem cmds interpreter {:keys [initial-state catch?]
@@ -1011,14 +1035,16 @@
 
   This useful for debugging failures.
 
-  **Example:**
+  # Example
 
-      (for-all [cmd (cmd-seq queue-statem)]
-        (when-failed! (run-cmds queue-statem cmds interpreter)
-          [history cmds]
-          (println \"FAILED\")
-          (doseq [entry history]
-            (println \" \" (str-history-entry entry)))))
+    ```clojure
+    (for-all [cmd (cmd-seq queue-statem)]
+      (when-failed! (run-cmds queue-statem cmds interpreter)
+        [history cmds]
+        (println \"FAILED\")
+        (doseq [entry history]
+          (println \" \" (str-history-entry entry)))))
+    ```
   "
   [execution-result bindings & body]
   (assert (vector? bindings) "bindings must be a vector of one or two variables")
@@ -1036,7 +1062,10 @@
 
   Returns the execution result given.
 
-  **Parameters:**
+  If you're looking to do something else on failure, see the [[when-failed!]]
+  macro.
+
+  # Parameters
 
     - `max-size` **(optional, integer)**
         If set, only prints history sizes less than or equal to this max size. Defaults to 10.
@@ -1046,13 +1075,13 @@
     - `execution-result` **(required, ExecutionResult)**
         The execution result produced by [[run-cmds]].
 
-  **Examples:**
+  # Examples
 
-      (print-failed-runs! (run-cmd statem cmds interpreter))
-      (print-failed-runs! {:mstate? true} (run-cmd statem cmds interpreter))
+    ```clojure
+    (print-failed-runs! (run-cmd statem cmds interpreter))
+    (print-failed-runs! {:mstate? true} (run-cmd statem cmds interpreter))
+    ```
 
-
-  If you're looking to do something on failure, see the [[when-failed!]] macro.
   "
   ([execution-result] (print-failed-runs! nil execution-result))
   ([{:keys [mstate? max-size]
@@ -1078,7 +1107,7 @@
   than [[run-cmds]]. This function is typically more useful if you're diagnosing
   why one particular sequence of commands is failing.
 
-  **Parameters:**
+  # Parameters
 
   - `statem` **(required, StateMachine)**
       The state machine needed to verify behavior against.
@@ -1172,7 +1201,7 @@
 (defn always-fn
   "Function form of [[always]] macro. See the macro for more details.
 
-  **Parameters:**
+  # Parameters
 
     - `f` **(function, 0-arity)**
         The function to execute that returns a Result value (eg - [[run-cmds]])
@@ -1195,7 +1224,7 @@
   This is useful to verify that asynchronous / concurrent behavior doesn't cause
   any flakey behavior.
 
-  **Parameters:**
+  # Parameters
 
     - `body` **(expression)**
         The form to execute that returns a Result value (eg - [[run-cmds]])
@@ -1236,16 +1265,18 @@
   This is useful to verify that asynchronous / concurrent behavior that you want
   to shrink to a reliably reproducable failure.
 
-  **Parameters:**
+  # Parameters
 
     - `body` **(expression)**
         The form to execute that returns a Result value (eg - [[run-cmds]])
     - `n` **(optional, integer, default is 10)**
         The number of times to repeatedly run a property to see if it failed.
 
-  **Example:**
+  # Example
 
+    ```clojure
     (sometimes (run-cmds statem cmds interpreter))
+    ```
 
   "
   ([body] `(sometimes-fn (fn [] ~body)))
