@@ -124,34 +124,38 @@
   (since test.check may not be able to generate a large part of the state
   machine's program space on any given run.)
 
-  **Example:**
+  # Example:
 
-      (defstatem queue-statem
-        \"A basic queue state machine\"
-        [mstate this]  ; -> state machine's model state is available in all commands
+  ```clojure
+  (defstatem queue-statem
+    \"A basic queue state machine\"
+    [mstate this]  ; -> state machine's model state is available in all commands
 
-        ;; define commands for the state machine
-        (:enqueue (args [] gen/any-printable)
-                  (advance [return-sym [cmd-name item]] ((fnil conj []) mstate item))
-                  (verify [prev-mstate [cmd-name item] ret] ret))
+    ;; define commands for the state machine
+    (:enqueue (args [] gen/any-printable)
+              (advance [return-sym [cmd-name item]] ((fnil conj []) mstate item))
+              (verify [prev-mstate [cmd-name item] ret] ret))
 
-        (:dequeue (assume [] (pos? (count mstate)))
-                  (advance [_ _] (subvec mstate 1))
-                  (verify [_ _ return-value] (= return-value (first mstate)))))
+    (:dequeue (assume [] (pos? (count mstate)))
+              (advance [_ _] (subvec mstate 1))
+              (verify [_ _ return-value] (= return-value (first mstate)))))
+  ```
 
-  **Implied parameters:**
+  # Implied parameters
 
     Implied parameters are like defrecord fields - parameters that exist in
     every method body. For conciseness, this is defined once instead of having to
     repeat it for every command. Otherwise state machine definitions would look like:
 
-      ;; NOTE: invalid code, do not use
-      (defstatem queue-statem
-        (:enqueue (assume [this model-state])
-                  (args [this model-state])
-                  (only-when [this model-state cmd-data])
-                  (advance [this model-state ret-sym cmd-data])
-                  (verify [this model-state prev-mstate cmd-data return-value])))
+    ``clojure
+    ;; NOTE: invalid code, do not use
+    (defstatem queue-statem
+      (:enqueue (assume [this model-state])
+                (args [this model-state])
+                (only-when [this model-state cmd-data])
+                (advance [this model-state ret-sym cmd-data])
+                (verify [this model-state prev-mstate cmd-data return-value])))
+    ```
 
     Here's the following implied parameters:
 
@@ -159,74 +163,87 @@
     - `this` represents the command itself. Can be optionally elided.
 
 
-  **Command Methods:**
+  # Command Methods
 
-  - `(assume [] ...)`
-       Return true if this command can be used for a given the model state. If
-       you depend on generated data, use `only-when` instead. Although using this
-       method aids in faster program generation.
+    ## `(assume [] ...)`
 
-       Default implementation returns true. Implementation must be free of side
-       effects.
-  - `(args [] ...)`
-        Return a vector of generators of data needed to execute this command.
-        Subsequent functions will receive the generated data as cmd-data. The
-        generated data is prefixed with the keyword of the command name.
+      Return true if this command can be used for a given the model state. If
+      you depend on generated data, use `only-when` instead. Although using this
+      method aids in faster program generation.
 
-        Default implementation returns nil. Implementation must be free of side
-        effects.
+      Default implementation returns true. Implementation must be free of side
+      effects.
 
-        For example:
+    ## `(args [] ...)`
 
-            (args [] [gen/int]) ;; => [:command-name 1]
-  - `(only-when [cmd-data] ...)`
-        Return true if this command can be used for a given model state or
-        generated command data.
+      Return a vector of generators of data needed to execute this command.
+      Subsequent functions will receive the generated data as cmd-data. The
+      generated data is prefixed with the keyword of the command name.
 
-        Default implementation calls through to `assume`. Implementation must be
-        free of side effects.
+      Default implementation returns nil. Implementation must be free of side
+      effects.
 
-        Parameters:
+      For example:
 
-        - `model-state` is the model state that is used for all commands. See
-                        'Implied parameters' section above.
-        - `cmd-data` refers to the generated command data from `args`.
-  - `(advance [ret-sym cmd-data] ...)`
-        Return the next model state from executing this command. ret-sym
-        represents the symbolic value of the return value of from calling
-        subject-under-test (but not yet realized).
+      ```clojure
+          (args [] [gen/int]) ;; => [:command-name 1]
+      ```
 
-        Default implementation returns `mstate`. Implemetation must be free of
-        side effects.
+    ## `(only-when [cmd-data] ...)`
 
-        Parameters:
+      Return true if this command can be used for a given model state or
+      generated command data.
 
-        - `model-state` is the model state that is used for all commands. See
-                        'Implied parameters' section above.
-        - `ret-sym` a opaque value that represents a reference of the return
-                    value. Alternatively said, this is a symbolic representation
-                    of the subject under test's return value. This may be useful
-                    to reference usage of a return value for testing /
-                    interpreter usage.
-        - `cmd-data` refers to the generated command data from `args`.
-  - `(verify [prev-mstate cmd-data return-value] ...)`
-        Verifies the state machine against the subject under test. Returns true
-        if the subject under test returned the correct value (aka - passed an
-        assertion).
+      Default implementation calls through to `assume`. Implementation must be
+      free of side effects.
 
-        Default implementation returns true. Implementation must be free of side
-        effects.
+      ### Parameters:
 
-        Parameters:
+      | argument      | description                                       |
+      | --------------|---------------------------------------------------|
+      | `model-state` | The model state that is used for all commands. See 'Implied parameters' section above. |
+      | `cmd-data`    | refers to the generated command data from `args`. |
 
-        - `model-state` is the model state that is used for all commands. See
-                        'Implied parameters' section above.
-        - `prev-mstate` refers to the model state prior to advance.
-        - `cmd-data` refers to the generated command data from `args`.
-        - `return-value` refers to the actual value the subject under tested
-                         returned when running.
 
-  **Notes:**
+    ## `(advance [ret-sym cmd-data] ...)`
+
+      Return the next model state from executing this command. ret-sym
+      represents the symbolic value of the return value of from calling
+      subject-under-test (but not yet realized).
+
+      Default implementation returns `mstate`. Implemetation must be free of
+      side effects.
+
+      ### Parameters:
+
+      - `model-state` is the model state that is used for all commands. See
+                      'Implied parameters' section above.
+      - `ret-sym` a opaque value that represents a reference of the return
+                  value. Alternatively said, this is a symbolic representation
+                  of the subject under test's return value. This may be useful
+                  to reference usage of a return value for testing /
+                  interpreter usage.
+      - `cmd-data` refers to the generated command data from `args`.
+
+    ## `(verify [prev-mstate cmd-data return-value] ...)`
+
+      Verifies the state machine against the subject under test. Returns true
+      if the subject under test returned the correct value (aka - passed an
+      assertion).
+
+      Default implementation returns true. Implementation must be free of side
+      effects.
+
+      ### Parameters:
+
+      - `model-state` is the model state that is used for all commands. See
+                      'Implied parameters' section above.
+      - `prev-mstate` refers to the model state prior to advance.
+      - `cmd-data` refers to the generated command data from `args`.
+      - `return-value` refers to the actual value the subject under tested
+                        returned when running.
+
+  # Notes
 
     State machine definitions are entirely abstract - meaning there is no
     external side effects that a production implementation may have. To perform
@@ -244,7 +261,7 @@
         - `advance` returns `model-state` it was given
         - `verify` returns `true`
 
-  **Large State Machines:**
+  # Large State Machines
 
     If you have a large state machine, it may be better to break it up into
     multiple smaller ones to test. Smaller state machines allow test.check to

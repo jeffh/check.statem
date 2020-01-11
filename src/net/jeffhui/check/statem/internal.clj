@@ -15,7 +15,7 @@
          r#))
 
     (defn dump-trace
-      "Internal use, do not use"
+      "Internal use, do not use."
       []
       (let [st    @stats
             s     (into []
