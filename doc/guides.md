@@ -8,10 +8,7 @@ Here lists topical guides related to state machine testing.
 Get up and running writing your first generative state machine tests
 
 - Crash Course on Generative Testing / Property Based Testing
-- [Making Your First State Machine Tests](./basics/getting_started.md)
-- [Defining State Machines][./basics/defining_state_machines.md]
-- Generating State Machine Tests
-- Debugging Failures
+- [Getting Started](./basics/getting_started.md)
 
 
 ## Testing Strategies
@@ -39,4 +36,3 @@ machine tests.
 For those that want understand the implementation details.
 
 - How Shrinking Commands Works
-- Implementing the Command protocol

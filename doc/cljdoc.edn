@@ -1,4 +1,3 @@
 {:cljdoc.doc/tree [["Readme" {:file "README.md"}]
                    ["Guides" {:file "doc/guides.md"}
-                    ["Making your first state machine tests" {:file "doc/basics/getting_started.md"}]
-                    ["Defining State Machines" {:file "doc/basics/defining_state_machines.md"}]]]}
+                    ["Getting Started" {:file "doc/basics/getting_started.md"}]]]}

@@ -1,3 +1,0 @@
-# Defining State Machines
-
-

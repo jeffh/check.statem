@@ -1,4 +1,4 @@
-# Making Your First State Machine Tests
+# Getting Started
 
 We're going to write a basic state machine to get a feel for `check.statem`.
 Then, we're going to write a state machine that models a basic key-value store
@@ -47,7 +47,7 @@ At a high level, we're going to do this:
 So lets get started!
 
 
-## State Machine #1
+## Defining a State Machine
 
 We can start defining our state machine:
 
