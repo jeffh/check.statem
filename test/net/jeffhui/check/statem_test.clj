@@ -132,6 +132,25 @@
 
   )
 
+
+(deftest sometimes-fails-if-all-runs-fails
+  (let [state (atom 0)]
+    (is (every? false?
+                (map :result
+                     (rose-tree/seq
+                      (generate-rt
+                       (for-all [i gen/int]
+                                (statem/sometimes
+                                 false))))))))
+  (let [state (atom 0)]
+    (is (every? true?
+                (map :result
+                     (rose-tree/seq
+                      (generate-rt
+                       (for-all [i gen/int]
+                                (statem/sometimes
+                                 (zero? (mod (swap! state inc) 5)))))))))))
+
 #_
 (doseq [r (rose/seq (generate-rt (cmd-seq queue-statem) 5))]
   (clojure.pprint/pprint r))

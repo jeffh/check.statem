@@ -1137,6 +1137,39 @@
   ([body] `(always-fn (fn [] ~body)))
   ([n body] `(always-fn ~n (fn [] ~body))))
 
+(defn sometimes-fn
+  "Function form of [[sometimes]] macro. See the macro for more details."
+  ([f] (sometimes-fn 10 f))
+  ([n f]
+   (let [result (f)]
+     (if (results/pass? result)
+       result
+       (if (zero? n)
+         result
+         (recur (dec n) f))))))
+
+(defmacro sometimes
+  "Repeats a body that returns any clojure.test.check.results/Result conforming
+  value up to n times. Returns the any passing result encountered.
+
+  This is useful to verify that asynchronous / concurrent behavior that you want
+  to shrink to a reliably reproducable failure.
+
+  **Parameters:**
+
+    - `body` **(expression)**
+        The form to execute that returns a Result value (eg - [[run-cmds]])
+    - `n` **(optional, integer, default is 10)**
+        The number of times to repeatedly run a property to see if it failed.
+
+  **Example:**
+
+    (sometimes (run-cmds statem cmds interpreter))
+
+  "
+  ([body] `(sometimes-fn (fn [] ~body)))
+  ([n body] `(sometimes-fn ~n (fn [] ~body))))
+
 (defn- denamespace-syms [form]
   (walk/postwalk
    (fn [f]
