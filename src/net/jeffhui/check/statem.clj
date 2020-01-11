@@ -124,7 +124,7 @@
   (since test.check may not be able to generate a large part of the state
   machine's program space on any given run.)
 
-  # Example:
+  ### Example:
 
     ```clojure
     (defstatem queue-statem
@@ -141,7 +141,7 @@
                 (verify [_ _ return-value] (= return-value (first mstate)))))
     ```
 
-  # Implied parameters
+  ### Implied parameters
 
     Implied parameters are like defrecord fields - parameters that exist in
     every method body. For conciseness, this is defined once instead of having to
@@ -163,9 +163,9 @@
     - `this` represents the command itself. Can be optionally elided.
 
 
-  # Command Methods
+  ### Command Methods
 
-    ## `(assume [] ...)`
+    #### `(assume [] ...)`
 
       Return true if this command can be used for a given the model state. If
       you depend on generated data, use `only-when` instead. Although using this
@@ -174,7 +174,7 @@
       Default implementation returns true. Implementation must be free of side
       effects.
 
-    ## `(args [] ...)`
+    #### `(args [] ...)`
 
       Return a vector of generators of data needed to execute this command.
       Subsequent functions will receive the generated data as cmd-data. The
@@ -189,7 +189,7 @@
           (args [] [gen/int]) ;; => [:command-name 1]
       ```
 
-    ## `(only-when [cmd-data] ...)`
+    #### `(only-when [cmd-data] ...)`
 
       Return true if this command can be used for a given model state or
       generated command data.
@@ -197,7 +197,7 @@
       Default implementation calls through to `assume`. Implementation must be
       free of side effects.
 
-      ### Parameters:
+      ##### Parameters:
 
       | argument      | description                                       |
       | --------------|---------------------------------------------------|
@@ -205,7 +205,7 @@
       | `cmd-data`    | refers to the generated command data from `args`. |
 
 
-    ## `(advance [ret-sym cmd-data] ...)`
+    #### `(advance [ret-sym cmd-data] ...)`
 
       Return the next model state from executing this command. ret-sym
       represents the symbolic value of the return value of from calling
@@ -214,7 +214,7 @@
       Default implementation returns `mstate`. Implemetation must be free of
       side effects.
 
-      ### Parameters:
+      ##### Parameters:
 
       - `model-state` is the model state that is used for all commands. See
                       'Implied parameters' section above.
@@ -225,7 +225,7 @@
                   interpreter usage.
       - `cmd-data` refers to the generated command data from `args`.
 
-    ## `(verify [prev-mstate cmd-data return-value] ...)`
+    #### `(verify [prev-mstate cmd-data return-value] ...)`
 
       Verifies the state machine against the subject under test. Returns true
       if the subject under test returned the correct value (aka - passed an
@@ -234,7 +234,7 @@
       Default implementation returns true. Implementation must be free of side
       effects.
 
-      ### Parameters:
+      ##### Parameters:
 
       - `model-state` is the model state that is used for all commands. See
                       'Implied parameters' section above.
@@ -243,7 +243,7 @@
       - `return-value` refers to the actual value the subject under tested
                         returned when running.
 
-  # Notes
+  ### Notes
 
     State machine definitions are entirely abstract - meaning there is no
     external side effects that a production implementation may have. To perform
@@ -261,7 +261,7 @@
         - `advance` returns `model-state` it was given
         - `verify` returns `true`
 
-  # Large State Machines
+  ### Large State Machines
 
     If you have a large state machine, it may be better to break it up into
     multiple smaller ones to test. Smaller state machines allow test.check to
@@ -296,7 +296,7 @@
 (defn list-commands
   "Returns a sequence of keywords indicating available command names for the state machine.
 
-  # Example
+  ### Example
 
     ```clojure
     (list-commands queue-statem)
@@ -310,7 +310,7 @@
   "Returns a command that that matches a given interface. Throws if the command
   does not exist unless a default value is given.
 
-  # Example
+  ### Example
 
     ```clojure
     (lookup-command queue-statem :new)
@@ -351,7 +351,7 @@
        - `args` returns `nil`. AKA: `(gen/tuple (gen/return command-name-kw))`
        - `verify` returns `true`
 
-  # Example
+  ### Example
 
     ```clojure
     (defstatem set-statem)
@@ -499,7 +499,7 @@
 (defn valid-cmd-seq?
   "Returns true if a sequence of commands conforms to a state machine's requirements.
 
-  # Example
+  ### Example
 
     ```clojure
     ;; for all of correct definitions of `queue-statem`, this should always pass
@@ -666,12 +666,12 @@
 (def select-by-any
   "A helper that simply returns a generator that picks commands randomly.
 
-  # Note
+  ### Note
 
     Based on how cmd-seq works, this frequency is affected by the constraints
     which the command can be valid as defined by the state machine.
 
-  # Example
+  ### Example
 
     ```clojure
     (cmd-seq statem {:select-generator select-by-any})
@@ -686,12 +686,12 @@
   The likelihood is determined by taking the value divided by the sum of all
   likelihoods.
 
-  # Note
+  ### Note
 
     Based on how cmd-seq works, this frequency is affected by the constraints
     which the command can be valid as defined by the state machine.
 
-  # Example
+  ### Example
 
     ```clojure
     (cmd-seq statem {:select-generator (select-by-frequency {:new    1000
@@ -709,7 +709,7 @@
   given state machine. Shrinking removes commands from the sequence while still
   conforming to the state machine.
 
-  # Parameters
+  ### Parameters
 
   - `statem` **(required, StateMachine)**
       The state machine that the sequence of commands must conform to.
@@ -731,7 +731,7 @@
       The initial state when the state machine starts. Should be the same as
       the one given to [[run-cmds]].
 
-  # Example
+  ### Example
 
 
     ```clojure
@@ -743,7 +743,7 @@
 
     For a more thorough example, check out [[run-cmds]].
 
-  # Generated Values
+  ### Generated Values
 
     *An opaque value to pass to [[run-cmds]]. The structure may change in the
     SNAPSHOT versions.*
@@ -803,7 +803,7 @@
 (defn valid-cmd-seq?
   "Returns true if a sequence of commands conforms to a state machine's requirements.
 
-  # Example
+  ### Example
 
     ```clojure
     ;; for all of correct definitions of `queue-statem`, this should always pass
@@ -895,7 +895,7 @@
   "Executes the symbolic representation of a sequence of commands using an
   interpreter.
 
-  # Returns
+  ### Returns
 
     An ExecutionResult record. Always returns a map with a key `:pass?` to
     indicate if the test program succeeded or failed. Alternatively, you can use
@@ -905,7 +905,7 @@
     ExecutionResult contains the execution history that can be useful for debugging.
     See [[when-failed!]] macro for example usage.
 
-  # Parameters
+  ### Parameters
 
   - `statem` **(required, StateMachine)**
       The state machine needed to verify behavior against.
@@ -927,7 +927,7 @@
       the runner to minimize the failure, but may lose the original stacktrace.
       Defaults to true.
 
-  # Interpreter
+  ### Interpreter
 
       :: (fn interpreter [cmd run-cmds-ctx])
         where
@@ -956,7 +956,7 @@
     which is the symbolic reference to the return value of the command after
     execution.
 
-  # Example
+  ### Example
 
     ```clojure
     ;; elided: TestQueue implementation
@@ -1035,7 +1035,7 @@
 
   This useful for debugging failures.
 
-  # Example
+  ### Example
 
     ```clojure
     (for-all [cmd (cmd-seq queue-statem)]
@@ -1065,7 +1065,7 @@
   If you're looking to do something else on failure, see the [[when-failed!]]
   macro.
 
-  # Parameters
+  ### Parameters
 
     - `max-size` **(optional, integer)**
         If set, only prints history sizes less than or equal to this max size. Defaults to 10.
@@ -1075,7 +1075,7 @@
     - `execution-result` **(required, ExecutionResult)**
         The execution result produced by [[run-cmds]].
 
-  # Examples
+  ### Examples
 
     ```clojure
     (print-failed-runs! (run-cmd statem cmds interpreter))
@@ -1107,7 +1107,7 @@
   than [[run-cmds]]. This function is typically more useful if you're diagnosing
   why one particular sequence of commands is failing.
 
-  # Parameters
+  ### Parameters
 
   - `statem` **(required, StateMachine)**
       The state machine needed to verify behavior against.
@@ -1201,7 +1201,7 @@
 (defn always-fn
   "Function form of [[always]] macro. See the macro for more details.
 
-  # Parameters
+  ### Parameters
 
     - `f` **(function, 0-arity)**
         The function to execute that returns a Result value (eg - [[run-cmds]])
@@ -1224,7 +1224,7 @@
   This is useful to verify that asynchronous / concurrent behavior doesn't cause
   any flakey behavior.
 
-  # Parameters
+  ### Parameters
 
     - `body` **(expression)**
         The form to execute that returns a Result value (eg - [[run-cmds]])
@@ -1265,14 +1265,14 @@
   This is useful to verify that asynchronous / concurrent behavior that you want
   to shrink to a reliably reproducable failure.
 
-  # Parameters
+  ### Parameters
 
     - `body` **(expression)**
         The form to execute that returns a Result value (eg - [[run-cmds]])
     - `n` **(optional, integer, default is 10)**
         The number of times to repeatedly run a property to see if it failed.
 
-  # Example
+  ### Example
 
     ```clojure
     (sometimes (run-cmds statem cmds interpreter))
