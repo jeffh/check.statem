@@ -165,113 +165,110 @@
 
   ### Command Methods
 
-    #### `(assume [] ...)`
+  #### `(assume [] ...)`
 
-      Return true if this command can be used for a given the model state. If
-      you depend on generated data, use `only-when` instead. Although using this
-      method aids in faster program generation.
+    Return true if this command can be used for a given the model state. If
+    you depend on generated data, use `only-when` instead. Although using this
+    method aids in faster program generation.
 
-      Default implementation returns true. Implementation must be free of side
-      effects.
+    Default implementation returns true. Implementation must be free of side
+    effects.
 
-    #### `(args [] ...)`
+  #### `(args [] ...)`
 
-      Return a vector of generators of data needed to execute this command.
-      Subsequent functions will receive the generated data as cmd-data. The
-      generated data is prefixed with the keyword of the command name.
+    Return a vector of generators of data needed to execute this command.
+    Subsequent functions will receive the generated data as cmd-data. The
+    generated data is prefixed with the keyword of the command name.
 
-      Default implementation returns nil. Implementation must be free of side
-      effects.
+    Default implementation returns nil. Implementation must be free of side
+    effects.
 
-      For example:
+    ##### Example
 
-      ```clojure
-          (args [] [gen/int]) ;; => [:command-name 1]
-      ```
+    ```clojure
+    (args [] [gen/int]) ;; => [:command-name 1]
+    ```
 
-    #### `(only-when [cmd-data] ...)`
+  #### `(only-when [cmd-data] ...)`
 
-      Return true if this command can be used for a given model state or
-      generated command data.
+  Return true if this command can be used for a given model state or
+  generated command data.
 
-      Default implementation calls through to `assume`. Implementation must be
-      free of side effects.
+  Default implementation calls through to `assume`. Implementation must be
+  free of side effects.
 
-      ##### Parameters:
+  ##### Parameters
 
-      | argument      | description                                       |
-      | --------------|---------------------------------------------------|
-      | `model-state` | The model state that is used for all commands. See 'Implied parameters' section above. |
-      | `cmd-data`    | refers to the generated command data from `args`. |
+  | argument      | description                                        |
+  | --------------|--------------------------------------------------- |
+  | `model-state` | The model state that is used for all commands. See 'Implied parameters' section above.
+  | `cmd-data`    | refers to the generated command data from `args`.
 
 
-    #### `(advance [ret-sym cmd-data] ...)`
+  #### `(advance [ret-sym cmd-data] ...)`
 
-      Return the next model state from executing this command. ret-sym
-      represents the symbolic value of the return value of from calling
-      subject-under-test (but not yet realized).
+  Return the next model state from executing this command. ret-sym
+  represents the symbolic value of the return value of from calling
+  subject-under-test (but not yet realized).
 
-      Default implementation returns `mstate`. Implemetation must be free of
-      side effects.
+  Default implementation returns `mstate`. Implemetation must be free of
+  side effects.
 
-      ##### Parameters:
+  ##### Parameters
 
-      - `model-state` is the model state that is used for all commands. See
-                      'Implied parameters' section above.
-      - `ret-sym` a opaque value that represents a reference of the return
-                  value. Alternatively said, this is a symbolic representation
-                  of the subject under test's return value. This may be useful
-                  to reference usage of a return value for testing /
-                  interpreter usage.
-      - `cmd-data` refers to the generated command data from `args`.
+  | argument      | description                                        |
+  | --------------|--------------------------------------------------- |
+  | `model-state` | The model state that is used for all commands. See 'Implied parameters' section above.
+  | `ret-sym`     | A symbolic representation of the subject under test's return value. This may be useful to reference usage of a return value for testing / interpreter usage.
+  | `cmd-data`    | The generated command data from `args`.
 
-    #### `(verify [prev-mstate cmd-data return-value] ...)`
+  #### `(verify [prev-mstate cmd-data return-value] ...)`
 
-      Verifies the state machine against the subject under test. Returns true
-      if the subject under test returned the correct value (aka - passed an
-      assertion).
+  Verifies the state machine against the subject under test. Returns true
+  if the subject under test returned the correct value (aka - passed an
+  assertion).
 
-      Default implementation returns true. Implementation must be free of side
-      effects.
+  Default implementation returns true. Implementation must be free of side
+  effects.
 
-      ##### Parameters:
+  ##### Parameters
 
-      - `model-state` is the model state that is used for all commands. See
-                      'Implied parameters' section above.
-      - `prev-mstate` refers to the model state prior to advance.
-      - `cmd-data` refers to the generated command data from `args`.
-      - `return-value` refers to the actual value the subject under tested
-                        returned when running.
+  | argument       | description                                        |
+  | ---------------|--------------------------------------------------- |
+  | `model-state`  | The model state that is used for all commands. See 'Implied parameters' section above.
+  | `prev-mstate`  | The model state prior to `advance`.
+  | `cmd-data`     | The generated command data frmo `args`.
+  | `return-value` | The actual value the subject under test returned when running.
 
   ### Notes
 
-    State machine definitions are entirely abstract - meaning there is no
-    external side effects that a production implementation may have. To perform
-    that comparison, use a function like `run-cmds` with some integration code.
-    This allows state machine definitions to be shared or reused against other
-    production implementations.
+  State machine definitions are entirely abstract - meaning there is no
+  external side effects that a production implementation may have. To perform
+  that comparison, use a function like `run-cmds` with some integration code.
+  This allows state machine definitions to be shared or reused against other
+  production implementations.
 
-    Other details of this macro:
+  Other details of this macro:
 
-    - args's body will wrap `(gen/tuple (gen/return command-name-kw) ...)`
-    - all methods have default implementations if not specified
-        - `assume` returns `true`
-        - `args` returns `nil`. AKA: `(gen/tuple (gen/return command-name-kw))`
-        - `only-when` returns `true`
-        - `advance` returns `model-state` it was given
-        - `verify` returns `true`
+  - args's body will wrap `(gen/tuple (gen/return command-name-kw) ...)`
+  - all methods have default implementations if not specified
+      - `assume` returns `true`
+      - `args` returns `nil`. AKA: `(gen/tuple (gen/return command-name-kw))`
+      - `only-when` returns `true`
+      - `advance` returns `model-state` it was given
+      - `verify` returns `true`
 
   ### Large State Machines
 
-    If you have a large state machine, it may be better to break it up into
-    multiple smaller ones to test. Smaller state machines allow test.check to
-    generate more of the possible program space within a typical test generation
-    (100 commands is test.checks' default size maximum).
+  If you have a large state machine, it may be better to break it up into
+  multiple smaller ones to test. Smaller state machines allow test.check to
+  generate more of the possible program space within a typical test generation
+  (100 commands is test.checks' default size maximum).
 
-    Alternatively, you can choose to generate commands with a skewed probability
-    of generating specific events. It's probably not as good of a solution to
-    breaking up the state machine, but can provide a more focused exploration of
-    specific kinds of program generations.
+  Alternatively, you can choose to generate commands with a skewed probability
+  of generating specific events. It's probably not as good of a solution to
+  breaking up the state machine, but can provide a more focused exploration of
+  specific kinds of program generations.
 
   "
   [table-name & commands]
@@ -711,79 +708,65 @@
 
   ### Parameters
 
-  - `statem` **(required, StateMachine)**
-      The state machine that the sequence of commands must conform to.
-  - `select-generator` **(optional, fn[1-arg])**
-      A function that accepts a map of `{:command-kw command-impl}` and returns
-      a generator that picks one of the command-impls.
-
-      The default implementation uses [[select-by-any]], which does a fair
-      random selection of commands.
-
-      The map contains only commands that are valid given the current state of
-      the state machine by using `assume`. Providing a custom function here can
-      allow you to skew the probability any particular command is generated.
-  - `size` **(optional, non-negative integer)**
-      The number of commands to generate for any particular program. The default
-      relies on test.check's natural sizing behavior (which increases the upper
-      bound range as more tests are generated).
-  - `initial-state` **(optional, anything StateMachine accepts as model state)**
-      The initial state when the state machine starts. Should be the same as
-      the one given to [[run-cmds]].
+  | key      | required? | expected type | description     |
+  | -------- | --------- | ------------- | --------------- |
+  | `statem` | required  | StateMachine  | The state machine that the sequence of commands must conform to.
+  | `select-generator` | optional | `(fn [m] ...)` | A function that accepts a map of `{:command-kw command-impl}` where only commands valid for the state machine is in `m`. Expected to return a generator that picks one of the command-impls. (Default [[select-by-any]]).
+  | `size`   | optional | non-negative integer | The number of commands to generate for any particular program. The default relies on test.check's natural sizing behavior.
+  | `initial-state` | optional | anything StateMachine accepts as model state | The initial state when the state machine starts. Should be the same as the one given to [[run-cmds]].
 
   ### Example
 
+  ```clojure
+  (defn queue-interpreter [cmd run-cmd-ctx] ...)
 
-    ```clojure
-    (defn queue-interpreter [cmd run-cmd-ctx] ...)
+  (for-all [cmds (cmd-seq queue-statem)]
+    (:pass? (run-cmds queue-statem cmds queue-interpreter)))
+  ```
 
-    (for-all [cmds (cmd-seq queue-statem)]
-      (:pass? (run-cmds queue-statem cmds queue-interpreter)))
-    ```
-
-    For a more thorough example, check out [[run-cmds]].
+  For a more thorough example, check out [[run-cmds]].
 
   ### Generated Values
 
-    *An opaque value to pass to [[run-cmds]]. The structure may change in the
-    SNAPSHOT versions.*
+  *An opaque value to pass to [[run-cmds]]. The structure may change in the
+  SNAPSHOT versions.*
 
-    Technically, returns a sequence of commands are in single-assignment
-    statement form:
+  Technically, returns a sequence of commands are in single-assignment
+  statement form:
 
-      ```clojure
-      [
-        [:set [:var 1] ...]
-        [:set [:var 2] ...]
-        [:set [:var 3] ...]
-        ...
-      ]
-      ```
+  ```clojure
+  [
+    [:set [:var 1] ...]
+    [:set [:var 2] ...]
+    [:set [:var 3] ...]
+    ...
+  ]
+  ```
 
-    Where `[:var N]` is a return value from running a given statement. This is
-    abstract representation akin to this in Clojure:
+  Where `[:var N]` is a return value from running a given statement. This is
+  abstract representation akin to this in Clojure:
 
-      ```clojure
-      (do
-        (def var1 ...)
-        (def var2 ...)
-        (def var3 ...)
-        ...)
-      ```
+  ```clojure
+  (do
+    (def var1 ...)
+    (def var2 ...)
+    (def var3 ...)
+    ...)
+  ```
 
-    The data structure returned is a format that is intended:
+  The data structure returned is a format that is intended:
 
-    - To be somewhat human readable (since test.check prints this)
-    - To have enough information in each statement for an interpreter function to operate
-    - To be pure data to allow them to be stored as regression test cases
-    - To be fast at generating. State machine generation can be slow for large state machines.
+  - To be somewhat human readable (since test.check prints this)
+  - To have enough information in each statement for an interpreter function to operate
+  - To be pure data to allow them to be stored as regression test cases
+  - To be fast at generating. State machine generation can be slow for large state machines.
 
 
-    SNAPSHOT limitations:
+  SNAPSHOT limitations:
 
-    The last reason is why the format should be considered opaque. It may be
-    useful for inspecting, but it should be considered 'no warranty' behavior for
-    depending on this result, say in a library.
+  The last reason is why the format should be considered opaque. It may be
+  useful for inspecting, but it should be considered 'no warranty' behavior for
+  depending on this result, say in a library.
   "
   ([statem]
    (cmd-seq statem nil))
@@ -805,11 +788,11 @@
 
   ### Example
 
-    ```clojure
-    ;; for all of correct definitions of `queue-statem`, this should always pass
-    (for-all [cmds (cmd-seq queue-statem)]
-            (valid-cmd-seq? queue-statem cmd))
-    ```
+  ```clojure
+  ;; for all of correct definitions of `queue-statem`, this should always pass
+  (for-all [cmds (cmd-seq queue-statem)]
+          (valid-cmd-seq? queue-statem cmd))
+  ```
   "
   ([statem cmds] (valid-cmd-seq? statem cmds nil))
   ([statem cmds {:keys [initial-state]}]
@@ -897,95 +880,85 @@
 
   ### Returns
 
-    An ExecutionResult record. Always returns a map with a key `:pass?` to
-    indicate if the test program succeeded or failed. Alternatively, you can use
-    `clojure.test.check.results/pass?` to resolve to true. This means simply
-    returning this value to `for-all` will work as expected (by checking `:pass?`).
+  An ExecutionResult record. Always returns a map with a key `:pass?` to
+  indicate if the test program succeeded or failed. Alternatively, you can use
+  `clojure.test.check.results/pass?` to resolve to true. This means simply
+  returning this value to `for-all` will work as expected (by checking `:pass?`).
 
-    ExecutionResult contains the execution history that can be useful for debugging.
-    See [[when-failed!]] macro for example usage.
+  ExecutionResult contains the execution history that can be useful for debugging.
+  See [[when-failed!]] macro for example usage.
 
   ### Parameters
 
-  - `statem` **(required, StateMachine)**
-      The state machine needed to verify behavior against.
-
-  - `cmds` **(required, seq of symbolic commands)**
-      The sequence of commands to execute against the subject under test. This
-      should be generated from [[cmd-seq]].
-
-  - `interpreter` **(required, fn[2-args])**
-      The interface to interacting with the subject under test. See 'Interpreter'
-      section below.
-
-  - `inital-state` **(optional, anything valid for StateMachine's model state)**
-      The initial state machine state. Should be the same as the one given to
-      [[cmd-seq]].
-
-  - `catch?` **(optional, bool)**
-      Should this runner attempt to catch exceptions? Catching exceptions allows
-      the runner to minimize the failure, but may lose the original stacktrace.
-      Defaults to true.
+  | key             | required? | expected type                                 | description     |
+  | --------------- | --------- | --------------------------------------------- | --------------- |
+  | `statem`        | required  | StateMachine                                  | The state machine needed to verify behavior against.
+  | `cmds`          | required  | seq of symbolic commands                      | The sequence of commands to execute against the subject under test. This should be generated from [[cmd-seq]].
+  | `intepreter`    | required  | `(fn [cmd ctx] ...)`                          | The interface to interacting with the subject under test. See 'Interpreter'section below.
+  | `initial-state` | optional  | anything valid for StateMachine's model state | The initial state machine state. Should be the same as the one given to [[cmd-seq]].
+  | `catch?`        | optional  | boolean                                       | Should this runner attempt to catch exceptions? Catching exceptions allows the runner to minimize the failure, but may lose the original stacktrace. (Default `true`)
 
   ### Interpreter
 
-      :: (fn interpreter [cmd run-cmds-ctx])
-        where
-          cmd          :: [cmd-type & generated-cmd-args]
-          run-cmds-ctx :: {:keys [var-table]}
-          var-table    :: {VariableSymbol value}
+    :: (fn interpreter [cmd run-cmds-ctx])
+      where
+        cmd          :: [cmd-type & generated-cmd-args]
+        run-cmds-ctx :: {:keys [var-table]}
+        var-table    :: {VariableSymbol value}
 
-    Interpreter receives every command to execute and is expected to run against
-    the subject under test. The return value of interpreter is the `return-value`
-    used in the state machine's `verify` method.
+  Interpreter receives every command to execute and is expected to run against
+  the subject under test. The return value of interpreter is the `return-value`
+  used in the state machine's `verify` method.
 
-    This function bridges the model state machine with a concrete implementation.
-    Having this interpreter function also keeps the model state machines free
-    from directly comparing to a specific imlementation.
+  This function bridges the model state machine with a concrete implementation.
+  Having this interpreter function also keeps the model state machines free
+  from directly comparing to a specific imlementation.
 
-    `var-table` is a map of symbolic variables to concrete values. A symboli
-    value is in the form `[:var N]` in the command generation value:
+  `var-table` is a map of symbolic variables to concrete values. A symboli
+  value is in the form `[:var N]` in the command generation value:
 
-      [[:set [:var 1] [:upload \"foo\"]]
-       [:set [:var 2] [:result [:var 1]]]]
+  ```clojure
+  [[:set [:var 1] [:upload \"foo\"]]
+    [:set [:var 2] [:result [:var 1]]]]
+  ```
 
-    This allows the state machine and interpreter to hold/refer to stateful
-    references to from previous statements.
+  This allows the state machine and interpreter to hold/refer to stateful
+  references to from previous statements.
 
-    For the state machine side, look at [[advance]] to see ret-sym,
-    which is the symbolic reference to the return value of the command after
-    execution.
+  For the state machine side, look at [[advance]] to see ret-sym,
+  which is the symbolic reference to the return value of the command after
+  execution.
 
   ### Example
 
-    ```clojure
-    ;; elided: TestQueue implementation
-    (defn queue-runner [cmd {:keys [varsym var-table]}]
-      (case (first cmd)
-        :new     (TestQueue. [] (second cmd))
-        :enqueue (.enqueue ^IQueue (var-table (second cmd)) (nth cmd 2))
-        :deque   (.dequeue ^IQueue (var-table (second cmd)))))
+  ```clojure
+  ;; elided: TestQueue implementation
+  (defn queue-runner [cmd {:keys [varsym var-table]}]
+    (case (first cmd)
+      :new     (TestQueue. [] (second cmd))
+      :enqueue (.enqueue ^IQueue (var-table (second cmd)) (nth cmd 2))
+      :deque   (.dequeue ^IQueue (var-table (second cmd)))))
 
-    (defstatem queue-statem
-      [mstate]
-      (:new (assume [] (nil? mstate))
-            (args [] [gen/pos-int])
-            (advance [v [_ n]] {:items    []
-                                :capacity n
-                                :ref      v}))
-      (:enqueue (assume [] (and (not (nil? mstate))
-                                (< (count (mstate :items)) (mstate :capacity))))
-                (args [] [(gen/return (:ref mstate)) gen/int])
-                (advance [v [_ _ n]] (update mstate :items conj n)))
-      (:deque (assume [] (and (not (nil? mstate))
-                              (pos? (count (mstate :items)))))
-              (advance [_ _] (update mstate :items subvec 1))
-              (args [] [(gen/return (:ref mstate))])
-              (verify [_ _ r] (= r (first (:items mstate))))))
+  (defstatem queue-statem
+    [mstate]
+    (:new (assume [] (nil? mstate))
+          (args [] [gen/pos-int])
+          (advance [v [_ n]] {:items    []
+                              :capacity n
+                              :ref      v}))
+    (:enqueue (assume [] (and (not (nil? mstate))
+                              (< (count (mstate :items)) (mstate :capacity))))
+              (args [] [(gen/return (:ref mstate)) gen/int])
+              (advance [v [_ _ n]] (update mstate :items conj n)))
+    (:deque (assume [] (and (not (nil? mstate))
+                            (pos? (count (mstate :items)))))
+            (advance [_ _] (update mstate :items subvec 1))
+            (args [] [(gen/return (:ref mstate))])
+            (verify [_ _ r] (= r (first (:items mstate))))))
 
-    (for-all [cmds (cmd-seq queue-statem)]
-              (run-cmds queue-statem cmds queue-interpreter))
-    ```
+  (for-all [cmds (cmd-seq queue-statem)]
+            (run-cmds queue-statem cmds queue-interpreter))
+  ```
   "
   ([^StateMachine statem cmds interpreter] (run-cmds statem cmds interpreter nil))
   ([^StateMachine statem cmds interpreter {:keys [initial-state catch?]
