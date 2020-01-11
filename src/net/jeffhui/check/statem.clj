@@ -856,7 +856,7 @@
   "Executes the symbolic representation of a sequence of commands using an
   interpreter.
 
-  Returns:
+  **Returns:**
 
     An ExecutionResult record. Always returns a map with a key `:pass?` to
     indicate if the test program succeeded or failed. Alternatively, you can use
@@ -866,7 +866,7 @@
     ExecutionResult contains the execution history that can be useful for debugging.
     See [[when-failed!]] macro for example usage.
 
-  Parameters:
+  **Parameters:**
 
   - `statem` **(required, StateMachine)**
       The state machine needed to verify behavior against.
@@ -994,7 +994,7 @@
 
   This useful for debugging failures.
 
-  Example:
+  **Example:**
 
       (for-all [cmd (cmd-seq queue-statem)]
         (when-failed! (run-cmds queue-statem cmds interpreter)
@@ -1019,16 +1019,17 @@
 
   Returns the execution result given.
 
-  Parameters:
+  **Parameters:**
 
     - `max-size` **(optional, integer)**
         If set, only prints history sizes less than or equal to this max size. Defaults to 10.
         Setting this to nil will print any sized failure.
     - `mstate?` **(optional, boolean)**
         If true, prints the model state for each executed command. Defaults to false.
-    - `
+    - `execution-result` **(required, ExecutionResult)**
+        The execution result produced by [[run-cmds]].
 
-  Example:
+  **Examples:**
 
       (print-failed-runs! (run-cmd statem cmds interpreter))
       (print-failed-runs! {:mstate? true} (run-cmd statem cmds interpreter))
@@ -1060,7 +1061,7 @@
   than [[run-cmds]]. This function is typically more useful if you're diagnosing
   why one particular sequence of commands is failing.
 
-  Parameters:
+  **Parameters:**
 
   - `statem` **(required, StateMachine)**
       The state machine needed to verify behavior against.

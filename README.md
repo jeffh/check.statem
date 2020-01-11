@@ -1,8 +1,7 @@
 # check.statem
 
 [![Clojars Project](https://img.shields.io/clojars/v/net.jeffhui/check.statem.svg)](https://clojars.org/net.jeffhui/check.statem)
-[Docs](https://jeffh.github.io/check.statem/)
-
+[![cljdoc badge](https://cljdoc.org/badge/net.jeffhui/check.statem)](https://cljdoc.org/d/net.jeffhui/check.statem/CURRENT)
 
 Generate stateful tests with state machines.
 
