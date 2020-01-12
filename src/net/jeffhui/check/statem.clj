@@ -988,7 +988,7 @@
                       (if (nil? return-value)
                         var-table
                         (assoc var-table v return-value))
-                      (conj! history (->HistoryEntry true mstate next-cmd return-value var-table)))
+                      (conj! history (->HistoryEntry true next-mstate cmd return-value var-table)))
                (->ExecutionResult false cmds
                                   (persistent! (conj! history
                                                       (->HistoryEntry false next-mstate cmd
