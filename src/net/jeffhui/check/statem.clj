@@ -974,7 +974,8 @@
        (loop [rem-cmds  cmds
               mstate    initial-state
               var-table {}
-              history   (transient [])]
+              history   (transient [(->HistoryEntry true mstate [:set [:var 0] [:initial-state]]
+                                                    nil {})])]
          (if (pos? (count rem-cmds))
            (let [[_ v [kind :as cmd]] (rem-cmds 0)
                  c                    (lookup-command statem kind)
@@ -987,10 +988,10 @@
                       (if (nil? return-value)
                         var-table
                         (assoc var-table v return-value))
-                      (conj! history (->HistoryEntry true mstate cmd return-value var-table)))
+                      (conj! history (->HistoryEntry true mstate next-cmd return-value var-table)))
                (->ExecutionResult false cmds
                                   (persistent! (conj! history
-                                                      (->HistoryEntry false mstate cmd
+                                                      (->HistoryEntry false next-mstate cmd
                                                                       return-value var-table))))))
            (->ExecutionResult true cmds (persistent! history))))))))
 
@@ -1140,34 +1141,35 @@
 
                        :else
                        (throw (IllegalArgumentException. (str "Unsupported debug-method: " (pr-str debug-method)))))
-         _           (internal/run-start tracer cmds nil)
-         result      (loop [rem-cmds  cmds
-                            mstate    initial-state
-                            var-table {}
-                            history   (transient [])]
-                       (if (pos? (count rem-cmds))
-                         (let [[_ v [kind :as cmd] :as stmt]
-                               (first rem-cmds)
+         _      (internal/run-start tracer cmds nil)
+         result (loop [rem-cmds  cmds
+                       mstate    initial-state
+                       var-table {}
+                       history   (transient [(->HistoryEntry true mstate [:set [:var 0] [:initial-state]]
+                                                             nil {})])]
+                  (if (pos? (count rem-cmds))
+                    (let [[_ v [kind :as cmd] :as stmt]
+                          (first rem-cmds)
 
-                               c            (lookup-command statem kind)
-                               next-mstate  (advance c mstate v cmd)
-                               _            (internal/run-step tracer stmt mstate next-mstate var-table)
-                               return-value (interpreter cmd {:var-table var-table})
-                               valid?       (and (not (error? return-value))
-                                                 (verify c next-mstate mstate cmd return-value))]
-                           (internal/run-return tracer stmt mstate next-mstate var-table return-value valid?)
-                           (if valid?
-                             (recur (rest rem-cmds)
-                                    next-mstate
-                                    (if (nil? return-value)
-                                      var-table
-                                      (assoc var-table v return-value))
-                                    (conj! history (->HistoryEntry true mstate cmd return-value var-table)))
-                             (->ExecutionResult false cmds
-                                                (persistent! (conj! history
-                                                                    (->HistoryEntry false mstate cmd
-                                                                                    return-value var-table))))))
-                         (->ExecutionResult true cmds (persistent! history))))]
+                          c            (lookup-command statem kind)
+                          next-mstate  (advance c mstate v cmd)
+                          _            (internal/run-step tracer stmt mstate next-mstate var-table)
+                          return-value (interpreter cmd {:var-table var-table})
+                          valid?       (and (not (error? return-value))
+                                            (verify c next-mstate mstate cmd return-value))]
+                      (internal/run-return tracer stmt mstate next-mstate var-table return-value valid?)
+                      (if valid?
+                        (recur (rest rem-cmds)
+                               next-mstate
+                               (if (nil? return-value)
+                                 var-table
+                                 (assoc var-table v return-value))
+                               (conj! history (->HistoryEntry true next-mstate cmd return-value var-table)))
+                        (->ExecutionResult false cmds
+                                           (persistent! (conj! history
+                                                               (->HistoryEntry false next-mstate cmd
+                                                                               return-value var-table))))))
+                    (->ExecutionResult true cmds (persistent! history))))]
      (internal/run-end tracer result)
      result)))
 
