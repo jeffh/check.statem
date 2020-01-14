@@ -73,7 +73,7 @@
     (when print-return-values?
       (println "│   └ returned:" (pr-str return-value))))
   (run-end [_ result]
-    (println "└" (if (:ok? result)
+    (println "└" (if (:pass? result)
                    "OK"
                    "FAILED"))))
 
@@ -89,7 +89,7 @@
       (println " ->" (if valid? "ok" "failed") (pr-str return-value))
       (println " ->" (if valid? "ok" "failed"))))
   (run-end [_ result]
-    (println "└" (if (:ok? result)
+    (println "└" (if (:pass? result)
                    "OK"
                    "FAILED"))))
 

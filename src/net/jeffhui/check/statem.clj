@@ -566,7 +566,7 @@
         (comp
          (mapcat (partial combo/combinations indicies-to-keep))
          (map vec)
-         (filter (partial shrink-valid-cmd-sequence? initial-state statem cmds))
+         ;; (filter (partial shrink-valid-cmd-sequence? initial-state statem cmds))
          (keep #(shrink-commands-size % initial-state statem cmds)))
         (range (count indicies-to-keep)))))))
 
@@ -575,10 +575,10 @@
   [initial-state statem cmds]
   (trace 'shrink-commands-data
     (let [rt-cmds (mapv (comp ::rose-tree meta) cmds)]
-      (rose/join
-       (rose/fmap (fn [cmds] (shrink-commands-size (vec (range 0 (count cmds))) initial-state statem cmds))
-                  (rose/filter
-                   (partial shrink-valid-cmd-sequence? initial-state statem)
+      (rose/filter
+       (partial shrink-valid-cmd-sequence? initial-state statem)
+       (rose/join
+        (rose/fmap (fn [cmds] (shrink-commands-size (vec (range 0 (count cmds))) initial-state statem cmds))
                    (rose/zip vector rt-cmds)))))))
 
 (defn- shrink-commands
@@ -974,7 +974,7 @@
        (loop [rem-cmds  cmds
               mstate    initial-state
               var-table {}
-              history   (transient [(->HistoryEntry true mstate [:set [:var 0] [:initial-state]]
+              history   (transient [(->HistoryEntry true initial-state [:set [:var 0] [:initial-state]]
                                                     nil {})])]
          (if (pos? (count rem-cmds))
            (let [[_ v [kind :as cmd]] (rem-cmds 0)
@@ -1145,7 +1145,7 @@
          result (loop [rem-cmds  cmds
                        mstate    initial-state
                        var-table {}
-                       history   (transient [(->HistoryEntry true mstate [:set [:var 0] [:initial-state]]
+                       history   (transient [(->HistoryEntry true initial-state [:set [:var 0] [:initial-state]]
                                                              nil {})])]
                   (if (pos? (count rem-cmds))
                     (let [[_ v [kind :as cmd] :as stmt]
