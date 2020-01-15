@@ -823,16 +823,18 @@
   Using this decorator is equivalent to passing `{:catch? true}` to [[run-cmds-debug]].
   "
   [interpreter]
-  (fn catch-interpreter-runner [& args]
-    (try
-      (apply interpreter args)
-      (catch Exception e
-        (ex-info "Uncaught exception"
-                 {::fail-fast true
-                  :exception   e
-                  :interpreter interpreter
-                  :args        args}
-                 e)))))
+  (vary-meta
+   (fn catch-interpreter-runner [& args]
+     (try
+       (apply interpreter args)
+       (catch Exception e
+         (ex-info "Uncaught exception"
+                  {::fail-fast true
+                   :exception   e
+                   :interpreter interpreter
+                   :args        args}
+                  e))))
+   assoc :check.statem/cleanup (:check.statem/cleanup (meta interpreter))))
 
 (defn catch-print-interpreter
   "Like [[catch-interpreter]], but prints to stdout
@@ -970,30 +972,34 @@
              "Invalid commands. Did you mean to remove one level of nesting from test results?")
      (let [interpreter (if catch?
                          (catch-print-interpreter interpreter)
-                         interpreter)]
-       (loop [rem-cmds  cmds
-              mstate    initial-state
-              var-table {}
-              history   (transient [(->HistoryEntry true initial-state [:set [:var 0] [:initial-state]]
-                                                    nil {})])]
-         (if (pos? (count rem-cmds))
-           (let [[_ v [kind :as cmd]] (rem-cmds 0)
-                 c                    (lookup-command statem kind)
-                 next-mstate          (advance c mstate v cmd)
-                 return-value         (interpreter cmd {:var-table var-table})]
-             (if (and (not (error? return-value))
-                      (verify c next-mstate mstate cmd return-value))
-               (recur (subvec rem-cmds 1)
-                      next-mstate
-                      (if (nil? return-value)
-                        var-table
-                        (assoc var-table v return-value))
-                      (conj! history (->HistoryEntry true next-mstate cmd return-value var-table)))
-               (->ExecutionResult false cmds
-                                  (persistent! (conj! history
-                                                      (->HistoryEntry false next-mstate cmd
-                                                                      return-value var-table))))))
-           (->ExecutionResult true cmds (persistent! history))))))))
+                         interpreter)
+           result (loop [rem-cmds  cmds
+                         mstate    initial-state
+                         var-table {}
+                         history   (transient [(->HistoryEntry true initial-state [:initial-state]
+                                                               nil {})])]
+                    (if (pos? (count rem-cmds))
+                      (let [[_ v [kind :as cmd]] (rem-cmds 0)
+                            c                    (lookup-command statem kind)
+                            next-mstate          (advance c mstate v cmd)
+                            return-value         (interpreter cmd {:var-table var-table})]
+                        (if (and (not (error? return-value))
+                                 (verify c next-mstate mstate cmd return-value))
+                          (recur (subvec rem-cmds 1)
+                                 next-mstate
+                                 (if (nil? return-value)
+                                   var-table
+                                   (assoc var-table v return-value))
+                                 (conj! history (->HistoryEntry true next-mstate cmd return-value var-table)))
+                          (->ExecutionResult false cmds
+                                             (persistent! (conj! history
+                                                                 (->HistoryEntry false next-mstate cmd
+                                                                                 return-value var-table))))))
+                      (->ExecutionResult true cmds (persistent! history))))
+           cleanup (:check.statem/cleanup (meta interpreter))]
+       (when cleanup
+         (cleanup result))
+       result))))
 
 (defmacro ^{:style/indent [1]} when-failed!
   "Executes a given body when a execution fails. Useful for printing debugging information.
@@ -1145,7 +1151,7 @@
          result (loop [rem-cmds  cmds
                        mstate    initial-state
                        var-table {}
-                       history   (transient [(->HistoryEntry true initial-state [:set [:var 0] [:initial-state]]
+                       history   (transient [(->HistoryEntry true initial-state [::initial-state]
                                                              nil {})])]
                   (if (pos? (count rem-cmds))
                     (let [[_ v [kind :as cmd] :as stmt]
@@ -1169,8 +1175,11 @@
                                            (persistent! (conj! history
                                                                (->HistoryEntry false next-mstate cmd
                                                                                return-value var-table))))))
-                    (->ExecutionResult true cmds (persistent! history))))]
+                    (->ExecutionResult true cmds (persistent! history))))
+         cleanup (:check.statem/cleanup (meta interpreter))]
      (internal/run-end tracer result)
+     (when cleanup
+       (cleanup result))
      result)))
 
 (defn always-fn
