@@ -869,6 +869,16 @@
           (pr-str (:cmd v))
           (pr-str (:return-value v))))
 
+(defn interpreter-with-cleanup
+  "Adds metadata to an interpreter function to allow cleanup code to run after a
+  test run finishes.
+
+  This allows an interpreter to clean up any resources created during the test
+  run by accessing the var-table of the run - such as closing open files.
+  "
+  [interpreter-fn cleanup-fn]
+  (vary-meta interpreter-fn assoc :check.statem/cleanup cleanup-fn))
+
 ;; Represents an execution result
 ;; Note: newer versions may add more fields
 (defrecord ExecutionResult [pass? cmds history]
@@ -967,8 +977,9 @@
                                            :or   {catch? true}}]
    (trace 'run-cmds
      (assert (and (seqable? cmds)
-                  (vector? (first cmds))
-                  (keyword (ffirst cmds)))
+                  (or (zero? (count cmds))
+                      (and (vector? (first cmds))
+                           (keyword (ffirst cmds)))))
              "Invalid commands. Did you mean to remove one level of nesting from test results?")
      (let [interpreter (if catch?
                          (catch-print-interpreter interpreter)
@@ -1347,3 +1358,10 @@
       (assert (empty? diff)
               (str "Expected to generate all commands, but didn't. Commands that didn't get generated: "
                    (pr-str diff))))))
+
+;; TODO: things to test
+;;
+;; - interpreter-with-cleanup
+;; - shrinking command data va commands
+;; - when-failed!
+;; - valid-cmd-seq?
