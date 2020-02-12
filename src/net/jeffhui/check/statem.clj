@@ -883,8 +883,8 @@
             "(x)")
           (pr-str (:cmd v))
           (pr-str (:return-value v))
-          (when (not= ::unavailable debug)
-            (str debug))))
+          (when (not= ::unavailable (:debug v))
+            (pr-str (:debug v)))))
 
 (defn interpreter-with-cleanup
   "Adds metadata to an interpreter function to allow cleanup code to run after a
