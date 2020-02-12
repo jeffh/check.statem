@@ -56,6 +56,10 @@
           (when more
             (list* `assert-args more)))))
 
+(defprotocol DebuggableCommand
+  (verify-debug [_ model-state previous-model-state args return-value]
+    "Called when verify of Command returns false. Allows returning a data structure for debugging"))
+
 ;; Implementation detail:
 ;; It is strongly recommended to use the defstatem macro instead to generate
 ;; conformance to this interface
@@ -86,6 +90,15 @@
   "
   :extend-via-metadata true
   ;; listed in order of first-invocation in a test run
+  (kind [_]
+    "Returns a constant value of representing the type of transition this.
+     Currently can be :observed or :conjectured.
+
+     - :observed commands are traditional transitions that are invocable /
+                 observable actions taken
+     - :conjectured commands are transitions that are implied when another
+                 transition occurrs. Conjectured commands are useful when
+                 modeling asynchronous background operations.")
   (assume [_ model-state]
     "Return true to indicate that this command can be executed based on the
     current model state. Should be free of side effects.")
@@ -342,6 +355,7 @@
    - all methods imply model-state and this via the 3rd argument
    - args's body will wrap `(gen/tuple (gen/return command-name-kw) ...)`
    - all methods have default implementations if not specified:
+       - `kind` returns `:observed`
        - `assume` returns `true`
        - `only-when` returns `true`
        - `advance` returns `model-state` it was given
@@ -381,7 +395,8 @@
         prev-mstate   (gensym "prev-mstate__")
         cmd           (gensym "cmd__")
         value         (gensym "value__")
-        default-impls {'assume    `(assume [] true)
+        default-impls {'kind      `(kind [] :observed)
+                       'assume    `(assume [] true)
                        'only-when `(only-when [cmd-name#] true)
                        'advance   `(advance [v# cmd-name#] ~model-state)
                        'args      `(args [] nil)
@@ -498,11 +513,11 @@
 
   ### Example
 
-    ```clojure
-    ;; for all of correct definitions of `queue-statem`, this should always pass
-    (for-all [cmds (cmd-seq queue-statem)]
+  ```clojure
+  ;; for all of correct definitions of `queue-statem`, this should always pass
+  (for-all [cmds (cmd-seq queue-statem)]
             (valid-cmd-seq? queue-statem cmd))
-    ```
+  ```
   "
   ([statem cmds] (valid-cmd-seq? statem cmds nil))
   ([statem cmds {:keys [initial-state]}]
@@ -692,8 +707,8 @@
 
     ```clojure
     (cmd-seq statem {:select-generator (select-by-frequency {:new    1000
-                                                              :add    100
-                                                              :remove 10})})
+                                                             :add    100
+                                                             :remove 10})})
     ```
   "
   [cmd-kw->count]
@@ -708,12 +723,12 @@
 
   ### Parameters
 
-  | key      | required? | expected type | description     |
-  | -------- | --------- | ------------- | --------------- |
-  | `statem` | required  | StateMachine  | The state machine that the sequence of commands must conform to.
-  | `select-generator` | optional | `(fn [m] ...)` | A function that accepts a map of `{:command-kw command-impl}` where only commands valid for the state machine is in `m`. Expected to return a generator that picks one of the command-impls. (Default [[select-by-any]]).
-  | `size`   | optional | non-negative integer | The number of commands to generate for any particular program. The default relies on test.check's natural sizing behavior.
-  | `initial-state` | optional | anything StateMachine accepts as model state | The initial state when the state machine starts. Should be the same as the one given to [[run-cmds]].
+  | key                        | required? | expected type                                | description     |
+  | -------------------------- | --------- | -------------------------------------------- | --------------- |
+  | `statem`                   | required  | StateMachine                                 | The state machine that the sequence of commands must conform to.
+  | `select-generator`         | optional  | `(fn [m] ...)`                               | A function that accepts a map of `{:command-kw command-impl}` where only commands valid for the state machine is in `m`. Expected to return a generator that picks one of the command-impls. (Default [[select-by-any]]).
+  | `size`                     | optional  | non-negative integer                         | The number of commands to generate for any particular program. The default relies on test.check's natural sizing behavior.
+  | `initial-state`            | optional  | anything StateMachine accepts as model state | The initial state when the state machine starts. Should be the same as the one given to [[run-cmds]].
 
   ### Example
 
@@ -834,7 +849,7 @@
                    :interpreter interpreter
                    :args        args}
                   e))))
-   assoc :check.statem/cleanup (:check.statem/cleanup (meta interpreter))))
+   assoc ::cleanup (::cleanup (meta interpreter))))
 
 (defn catch-print-interpreter
   "Like [[catch-interpreter]], but prints to stdout
@@ -857,17 +872,19 @@
 (defn- error? [e]
   (boolean (::fail-fast (ex-data e))))
 
-(defrecord HistoryEntry [valid? mstate cmd return-value var-table])
+(defrecord HistoryEntry [valid? mstate cmd return-value var-table debug])
 
 (defn str-history-entry
   "Returns a print-friendly output of a history entry"
   [^HistoryEntry v]
-  (format "%s %s -> %s"
+  (format "%s %s -> %s%s"
           (if (:valid? v)
             "(✓)"
             "(x)")
           (pr-str (:cmd v))
-          (pr-str (:return-value v))))
+          (pr-str (:return-value v))
+          (when (not= ::unavailable debug)
+            (str debug))))
 
 (defn interpreter-with-cleanup
   "Adds metadata to an interpreter function to allow cleanup code to run after a
@@ -877,7 +894,7 @@
   run by accessing the var-table of the run - such as closing open files.
   "
   [interpreter-fn cleanup-fn]
-  (vary-meta interpreter-fn assoc :check.statem/cleanup cleanup-fn))
+  (vary-meta interpreter-fn assoc ::cleanup cleanup-fn))
 
 ;; Represents an execution result
 ;; Note: newer versions may add more fields
@@ -912,11 +929,13 @@
 
   ### Interpreter
 
+  ```
     :: (fn interpreter [cmd run-cmds-ctx])
       where
         cmd          :: [cmd-type & generated-cmd-args]
         run-cmds-ctx :: {:keys [var-table]}
         var-table    :: {VariableSymbol value}
+  ```
 
   Interpreter receives every command to execute and is expected to run against
   the subject under test. The return value of interpreter is the `return-value`
@@ -931,7 +950,9 @@
 
   ```clojure
   [[:set [:var 1] [:upload \"foo\"]]
-    [:set [:var 2] [:result [:var 1]]]]
+  ;;     ^^^^^^^^ this
+   [:set [:var 2] [:result [:var 1]]]]
+  ;;     ^^^^^^^^ and this
   ```
 
   This allows the state machine and interpreter to hold/refer to stateful
@@ -984,30 +1005,35 @@
      (let [interpreter (if catch?
                          (catch-print-interpreter interpreter)
                          interpreter)
-           result (loop [rem-cmds  cmds
-                         mstate    initial-state
-                         var-table {}
-                         history   (transient [(->HistoryEntry true initial-state [:initial-state]
-                                                               nil {})])]
-                    (if (pos? (count rem-cmds))
-                      (let [[_ v [kind :as cmd]] (rem-cmds 0)
-                            c                    (lookup-command statem kind)
-                            next-mstate          (advance c mstate v cmd)
-                            return-value         (interpreter cmd {:var-table var-table})]
-                        (if (and (not (error? return-value))
-                                 (verify c next-mstate mstate cmd return-value))
-                          (recur (subvec rem-cmds 1)
-                                 next-mstate
-                                 (if (nil? return-value)
-                                   var-table
-                                   (assoc var-table v return-value))
-                                 (conj! history (->HistoryEntry true next-mstate cmd return-value var-table)))
-                          (->ExecutionResult false cmds
-                                             (persistent! (conj! history
-                                                                 (->HistoryEntry false next-mstate cmd
-                                                                                 return-value var-table))))))
-                      (->ExecutionResult true cmds (persistent! history))))
-           cleanup (:check.statem/cleanup (meta interpreter))]
+           result      (loop [rem-cmds  cmds
+                              mstate    initial-state
+                              var-table {}
+                              history   (transient [(->HistoryEntry true initial-state [:initial-state]
+                                                                    nil {} ::unavailable)])]
+                         (if (pos? (count rem-cmds))
+                           (let [[_ v [kind :as cmd]] (rem-cmds 0)
+                                 c                    (lookup-command statem kind)
+                                 next-mstate          (advance c mstate v cmd)
+                                 return-value         (interpreter cmd {:var-table var-table})
+                                 verify-result        (and (not (error? return-value))
+                                                           (verify c next-mstate mstate cmd return-value))]
+                             (if (results/pass? verify-result)
+                               (recur (subvec rem-cmds 1)
+                                      next-mstate
+                                      (if (nil? return-value)
+                                        var-table
+                                        (assoc var-table v return-value))
+                                      (conj! history (->HistoryEntry verify-result next-mstate cmd return-value var-table
+                                                                     (if (satisfies? DebuggableCommand c)
+                                                                       (verify-debug c next-mstate mstate cmd return-value)
+                                                                       ::unavailable))))
+                               (->ExecutionResult false cmds
+                                                  (persistent! (conj! history
+                                                                      (->HistoryEntry verify-result next-mstate cmd
+                                                                                      return-value var-table
+                                                                                      ::unavailable))))))
+                           (->ExecutionResult true cmds (persistent! history))))
+           cleanup     (:check.statem/cleanup (meta interpreter))]
        (when cleanup
          (cleanup result))
        result))))
@@ -1168,23 +1194,23 @@
                     (let [[_ v [kind :as cmd] :as stmt]
                           (first rem-cmds)
 
-                          c            (lookup-command statem kind)
-                          next-mstate  (advance c mstate v cmd)
-                          _            (internal/run-step tracer stmt mstate next-mstate var-table)
-                          return-value (interpreter cmd {:var-table var-table})
-                          valid?       (and (not (error? return-value))
-                                            (verify c next-mstate mstate cmd return-value))]
+                          c             (lookup-command statem kind)
+                          next-mstate   (advance c mstate v cmd)
+                          _             (internal/run-step tracer stmt mstate next-mstate var-table)
+                          return-value  (interpreter cmd {:var-table var-table})
+                          verify-result (and (not (error? return-value))
+                                             (verify c next-mstate mstate cmd return-value))]
                       (internal/run-return tracer stmt mstate next-mstate var-table return-value valid?)
-                      (if valid?
+                      (if (results/pass? verify-result)
                         (recur (rest rem-cmds)
                                next-mstate
                                (if (nil? return-value)
                                  var-table
                                  (assoc var-table v return-value))
-                               (conj! history (->HistoryEntry true next-mstate cmd return-value var-table)))
+                               (conj! history (->HistoryEntry verify-result next-mstate cmd return-value var-table)))
                         (->ExecutionResult false cmds
                                            (persistent! (conj! history
-                                                               (->HistoryEntry false next-mstate cmd
+                                                               (->HistoryEntry verify-result next-mstate cmd
                                                                                return-value var-table))))))
                     (->ExecutionResult true cmds (persistent! history))))
          cleanup (:check.statem/cleanup (meta interpreter))]
