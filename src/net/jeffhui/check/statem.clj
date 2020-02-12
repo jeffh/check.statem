@@ -1188,8 +1188,8 @@
          result (loop [rem-cmds  cmds
                        mstate    initial-state
                        var-table {}
-                       history   (transient [(->HistoryEntry true initial-state [::initial-state]
-                                                             nil {})])]
+                       history   (transient [(->HistoryEntry true initial-state [:initial-state]
+                                                             nil {} ::unavailable)])]
                   (if (pos? (count rem-cmds))
                     (let [[_ v [kind :as cmd] :as stmt]
                           (first rem-cmds)
@@ -1200,18 +1200,22 @@
                           return-value  (interpreter cmd {:var-table var-table})
                           verify-result (and (not (error? return-value))
                                              (verify c next-mstate mstate cmd return-value))]
-                      (internal/run-return tracer stmt mstate next-mstate var-table return-value valid?)
+                      (internal/run-return tracer stmt mstate next-mstate var-table return-value verify-result)
                       (if (results/pass? verify-result)
                         (recur (rest rem-cmds)
                                next-mstate
                                (if (nil? return-value)
                                  var-table
                                  (assoc var-table v return-value))
-                               (conj! history (->HistoryEntry verify-result next-mstate cmd return-value var-table)))
+                               (conj! history (->HistoryEntry verify-result next-mstate cmd return-value var-table
+                                                              (if (satisfies? DebuggableCommand c)
+                                                                (verify-debug c next-mstate mstate cmd return-value)
+                                                                ::unavailable))))
                         (->ExecutionResult false cmds
                                            (persistent! (conj! history
                                                                (->HistoryEntry verify-result next-mstate cmd
-                                                                               return-value var-table))))))
+                                                                               return-value var-table
+                                                                               ::unavailable))))))
                     (->ExecutionResult true cmds (persistent! history))))
          cleanup (:check.statem/cleanup (meta interpreter))]
      (internal/run-end tracer result)
