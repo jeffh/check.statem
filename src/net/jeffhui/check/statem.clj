@@ -316,6 +316,26 @@
   [^StateMachine statem]
   (keys (.commands statem)))
 
+(defn list-commands-by
+  "Returns a sequence of keywords indicates available command names for the
+  given state machine that match a given kind.
+
+  ### Example
+
+  ```clojure
+    (list-commands-by queue-statem :observable)
+    ;; => [:new :enqueue :dequeue]
+    (list-commands-by queue-statem :conjectured)
+    ;; => []
+  ```
+  "
+  [^StateMachine statem k]
+  (sequence
+   (comp
+    (remove (fn [[_ cmd]] (not= (kind cmd) k)))
+    (map key))
+   (.commands statem)))
+
 (defn lookup-command
   "Returns a command that that matches a given interface. Throws if the command
   does not exist unless a default value is given.
@@ -382,7 +402,7 @@
    (vector? shared-bindings) "shared bindings must be a vector of [mstate this]"
    (<= (count shared-bindings) 2) "shared bindings only has at most 2 arguments [mstate this]"
    (every? seq? methods) "all methods are sequences")
-  (let [allowed-methods      '#{assume only-when advance args verify}
+  (let [allowed-methods      '#{kind assume only-when advance args verify verify-debug}
         unrecognized-methods (set/difference (set (map first methods))
                                              allowed-methods)]
     (assert-args (empty? unrecognized-methods)
@@ -395,12 +415,13 @@
         prev-mstate   (gensym "prev-mstate__")
         cmd           (gensym "cmd__")
         value         (gensym "value__")
-        default-impls {'kind      `(kind [] :observed)
-                       'assume    `(assume [] true)
-                       'only-when `(only-when [cmd-name#] true)
-                       'advance   `(advance [v# cmd-name#] ~model-state)
-                       'args      `(args [] nil)
-                       'verify    `(verify [prev-mstate# cmd-name# return-value#] true)}
+        default-impls {'kind         `(kind [] :observed)
+                       'assume       `(assume [] true)
+                       'only-when    `(only-when [cmd-name#] true)
+                       'advance      `(advance [v# cmd-name#] ~model-state)
+                       'args         `(args [] nil)
+                       'verify       `(verify [prev-mstate# cmd-name# return-value#] true)
+                       'verify-debug `(verify-debug [prev-mstate# cmd-name# return-value#] ::no-debug)}
         impls         (merge default-impls
                              (into {} (map (juxt first identity)) methods))
         fill-impl     (fn [bindings sym]
@@ -429,7 +450,12 @@
        (alter-var-root (var ~table-name)
                        assoc-in [:commands cn#]
                        (reify
+                         DebuggableCommand
+                         (verify-debug [~this ~mstate ~prev-mstate ~cmd ~value]
+                           ~(fill-impl [mstate prev-mstate cmd value] 'verify-debug))
                          Command
+                         (kind [~this]
+                           ~(fill-impl [] 'kind))
                          (assume [~this ~mstate]
                            ~(fill-impl [mstate] 'assume))
                          (only-when [~this ~mstate ~cmd]
@@ -877,14 +903,16 @@
 (defn str-history-entry
   "Returns a print-friendly output of a history entry"
   [^HistoryEntry v]
-  (format "%s %s -> %s%s"
+  (format "%s %s -> %s"
           (if (:valid? v)
             "(✓)"
             "(x)")
           (pr-str (:cmd v))
-          (pr-str (:return-value v))
-          (when (not= ::unavailable (:debug v))
-            (pr-str (:debug v)))))
+          (when-not (:valid? v)
+            (condp = (:debug v)
+              ::no-debug  (str (pr-str (:return-value v)))
+              ::exception (str "threw" (pr-str (:return-value v)))
+              (str (pr-str (:return-value v)) " | " (:debug v))))))
 
 (defn interpreter-with-cleanup
   "Adds metadata to an interpreter function to allow cleanup code to run after a
@@ -1009,7 +1037,7 @@
                               mstate    initial-state
                               var-table {}
                               history   (transient [(->HistoryEntry true initial-state [:initial-state]
-                                                                    nil {} ::unavailable)])]
+                                                                    nil {} ::no-debug)])]
                          (if (pos? (count rem-cmds))
                            (let [[_ v [kind :as cmd]] (rem-cmds 0)
                                  c                    (lookup-command statem kind)
@@ -1024,14 +1052,16 @@
                                         var-table
                                         (assoc var-table v return-value))
                                       (conj! history (->HistoryEntry verify-result next-mstate cmd return-value var-table
-                                                                     (if (satisfies? DebuggableCommand c)
-                                                                       (verify-debug c next-mstate mstate cmd return-value)
-                                                                       ::unavailable))))
+                                                                     (cond (error? return-value)            ::exception
+                                                                           (satisfies? DebuggableCommand c) (verify-debug c next-mstate mstate cmd return-value)
+                                                                           :else                            ::no-debug))))
                                (->ExecutionResult false cmds
                                                   (persistent! (conj! history
                                                                       (->HistoryEntry verify-result next-mstate cmd
                                                                                       return-value var-table
-                                                                                      ::unavailable))))))
+                                                                                      (cond (error? return-value)            ::exception
+                                                                                            (satisfies? DebuggableCommand c) (verify-debug c next-mstate mstate cmd return-value)
+                                                                                            :else                            ::no-debug)))))))
                            (->ExecutionResult true cmds (persistent! history))))
            cleanup     (:check.statem/cleanup (meta interpreter))]
        (when cleanup
@@ -1122,7 +1152,7 @@
 
   Because of the debugging instrumentation, this executes commands more slowly
   than [[run-cmds]]. This function is typically more useful if you're diagnosing
-  why one particular sequence of commands is failing.
+  why one particular sequence of commands is hanging.
 
   ### Parameters
 
@@ -1189,7 +1219,7 @@
                        mstate    initial-state
                        var-table {}
                        history   (transient [(->HistoryEntry true initial-state [:initial-state]
-                                                             nil {} ::unavailable)])]
+                                                             nil {} ::no-debug)])]
                   (if (pos? (count rem-cmds))
                     (let [[_ v [kind :as cmd] :as stmt]
                           (first rem-cmds)
@@ -1208,14 +1238,16 @@
                                  var-table
                                  (assoc var-table v return-value))
                                (conj! history (->HistoryEntry verify-result next-mstate cmd return-value var-table
-                                                              (if (satisfies? DebuggableCommand c)
-                                                                (verify-debug c next-mstate mstate cmd return-value)
-                                                                ::unavailable))))
+                                                              (cond (error? return-value)            ::exception
+                                                                    (satisfies? DebuggableCommand c) (verify-debug c next-mstate mstate cmd return-value)
+                                                                    :else                            ::no-debug))))
                         (->ExecutionResult false cmds
                                            (persistent! (conj! history
                                                                (->HistoryEntry verify-result next-mstate cmd
                                                                                return-value var-table
-                                                                               ::unavailable))))))
+                                                                               (cond (error? return-value)            ::exception
+                                                                                     (satisfies? DebuggableCommand c) (verify-debug c next-mstate mstate cmd return-value)
+                                                                                     :else                            ::no-debug)))))))
                     (->ExecutionResult true cmds (persistent! history))))
          cleanup (:check.statem/cleanup (meta interpreter))]
      (internal/run-end tracer result)
@@ -1332,10 +1364,10 @@
   (let [num-cmds (count (.commands statem))
         programs (gen/sample (cmd-seq statem {:size num-cmds}) (* num-cmds 10))]
     ;; generator destructuring check
-    (doseq [stmts programs
+    (doseq [stmts                    programs
             [_ _ [cmd-name :as cmd]] stmts
-            :let [cmd-meta (get (.cmd_metadatas statem) cmd-name)
-                  generated-cmd-count (count cmd)]]
+            :let                     [cmd-meta (get (.cmd_metadatas statem) cmd-name)
+                                      generated-cmd-count (count cmd)]]
       (letfn [(check-gen-args [method gen-arg-index]
                 (let [cmd-arg (nth (second (cmd-meta method)) gen-arg-index)]
                   (when (vector? cmd-arg)
@@ -1383,8 +1415,8 @@
                               (map (fn [stmts] (set (map (comp first last) stmts))))
                               (apply concat [])
                               set)
-          all-cmds (set (keys (.commands statem)))
-          diff (set/difference all-cmds exercised-cmds)]
+          all-cmds       (set (list-commands-by statem :observable))
+          diff           (set/difference all-cmds exercised-cmds)]
       (assert (empty? diff)
               (str "Expected to generate all commands, but didn't. Commands that didn't get generated: "
                    (pr-str diff))))))

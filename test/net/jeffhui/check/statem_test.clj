@@ -49,7 +49,8 @@
                           (pos? (count (mstate :items)))))
           (advance [_ _] (update mstate :items subvec 1))
           (args [] [(gen/return (:ref mstate))])
-          (verify [prev-mstate _ r] (= r (first (:items prev-mstate))))))
+          (verify [prev-mstate _ r] (= r (first (:items prev-mstate))))
+          (verify-debug [prev-mstate _ r] {:expected (first (:items prev-mstate))})))
 
 (deftype TestQueue [^:volatile-mutable items ^:volatile-mutable capacity]
   IQueue
@@ -171,7 +172,8 @@
 
 (defspec queue-program-generation-using-fair-distribution 100
   (for-all [cmds (cmd-seq queue-statem)]
-           (run-cmds queue-statem cmds queue-runner)))
+           (statem/print-failed-runs!
+            (run-cmds queue-statem cmds queue-runner))))
 
 (defspec queue-program-generation-using-custom-distribution 100
   (for-all [cmds (cmd-seq queue-statem {:select-generator (select-by-frequency {:new     100
