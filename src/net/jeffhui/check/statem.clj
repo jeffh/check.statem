@@ -1415,7 +1415,7 @@
                               (map (fn [stmts] (set (map (comp first last) stmts))))
                               (apply concat [])
                               set)
-          all-cmds       (set (list-commands-by statem :observable))
+          all-cmds       (set (list-commands statem))
           diff           (set/difference all-cmds exercised-cmds)]
       (assert (empty? diff)
               (str "Expected to generate all commands, but didn't. Commands that didn't get generated: "
