@@ -32,6 +32,7 @@
      - [[check!]] run some sanity checks against the state machine definition.
      - [[run-cmds-debug]] is a verbose printout version of [[run-cmds]].
      - [[select-by-frequency]] allows you to skew how [[cmd-seq]] generates commands.
+     - [[print-failed-runs!]] prints commands if a particular [[run-cmds]] call fails.
   "
   (:require [clojure.set :as set]
             [clojure.string :as string]
