@@ -17,7 +17,7 @@ jobs:
     - name: Setup Java Action
       uses: actions/setup-java@v1
       with:
-        version: ${{ matrix.java }}
+        java-version: ${{ matrix.java }}
     - name: Install Clojure
       run: |
         curl -O https://download.clojure.org/install/linux-install-1.10.1.469.sh
