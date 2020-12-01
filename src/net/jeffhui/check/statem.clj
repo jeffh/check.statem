@@ -57,8 +57,13 @@
             (list* `assert-args more)))))
 
 (defprotocol DebuggableCommand
+  "An extension to Command protocol that allows a command to provide debug information."
   (verify-debug [_ model-state previous-model-state args return-value]
-    "Called when verify of Command returns false. Allows returning a data structure for debugging"))
+    "Called when verify of Command returns false. Allows returning a data structure for debugging.
+
+    Return `:net.jeffhui.check.statem/no-debug` to indicate no debugging
+    information. (Default for [[defstatem]]/[[defcommand]] macros)
+    "))
 
 ;; Implementation detail:
 ;; It is strongly recommended to use the defstatem macro instead to generate
