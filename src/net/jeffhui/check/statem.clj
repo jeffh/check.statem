@@ -752,7 +752,7 @@
   | key                        | required? | expected type                                | description     |
   | -------------------------- | --------- | -------------------------------------------- | --------------- |
   | `statem`                   | required  | StateMachine                                 | The state machine that the sequence of commands must conform to.
-  | `select-generator`         | optional  | `(fn [m] ...)`                               | A function that accepts a map of `{:command-kw command-impl}` where only commands valid for the state machine is in `m`. Expected to return a generator that picks one of the command-impls. (Default [[select-by-any]]).
+  | `select-generator`         | optional  | `(fn [state statem m] ...)`                  | A function that accepts a map of `{:command-kw command-impl}` where only commands valid for the state machine is in `m`. `state` is the current stored state of the state machine and `statem` is the given state machine. The function is expected to return a generator that picks one of the command-impls. (Default [[select-by-any]]).
   | `size`                     | optional  | non-negative integer                         | The number of commands to generate for any particular program. The default relies on test.check's natural sizing behavior.
   | `initial-state`            | optional  | anything StateMachine accepts as model state | The initial state when the state machine starts. Should be the same as the one given to [[run-cmds]].
 
