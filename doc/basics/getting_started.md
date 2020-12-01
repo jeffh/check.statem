@@ -57,11 +57,12 @@ We can start defining our state machine:
             [net.jeffhui.check.statem :as statem]))
 
 (statem/defstatem key-value-statem ;; name of the state machine
-  [mstate] ;; the internal model state -- starts as nil
+  [mstate] ;; the internal model state variable -- starts as nil, but can change via return value of `advance`.
   ;; define transitions (check.statem utilizes 'transitions' and 'commands' interchangably)
   (:put ;; name of the transition
     (args [] [gen/keyword gen/any-printable-equatable]) ;; associated data generators for this transition
-    (advance [_ [_ k value]] ;; next-mstate given the generated data and the current mstate
+    (advance [_ [cmd-name k value]]
+      ;; return next mstate given the generated data and the current mstate. cmd-name = transition key (in this case, :put)
       (assoc mstate k value)))
   (:get
      ;; precondition for this transition to be utilized (here: we must have stored something)
@@ -75,7 +76,7 @@ We can start defining our state machine:
 
 Phew, that's done. Let's go through it step by step of the `defstatem` macro:
 
-1. The first argument `key-value-statem`, defines the name of the state machine that we can use to refer to this definition later
+1. The first argument `key-value-statem`, defines the var of the state machine that we can use to refer to this definition later
 2. The next argument is like a field definition. State machines have `[mstate cmd]` as bindable to variables.
   - `mstate` is the current model state. This is the state machine's internal state between transitions
   - `cmd` is refers to the current command instance. In practice, it's reserved for some special cases that we won't be using, so we can omit it.
@@ -89,7 +90,7 @@ Each transition defines the following information:
 
 - The name of the transition. It can be any edn value that is used to refer to
   the transition. Note that it is used for execution, so a keyword is
-  convention.
+  conventional.
 - preconditions that must be met before being allowed to follow a transition.
   A transition that never has its precondition satisfied will never be
   utilized in program generation.
@@ -121,7 +122,7 @@ omitted defining methods that don't change from the default value:
 - `assume` returns `true` by default, so we can omit it
 - `args` returns `[]` by default, so we need our implementation
 - `only-when` returns `true` by default, so we can omit it
-- `advance` returns `mstate` by default, so we need to override it with out implementation
+- `advance` returns `mstate` by default, so we need to override it with our implementation
 - `verify` returns `true` by default, so we can omit it
 
 This gives the form we had earlier:
@@ -188,7 +189,6 @@ return symbol.
 `ret-sym` is for more specialized use cases. If our implementation returned a
 mutable value that we want to refer to in subsequent transitions, we would want
 to store `ret-sym` in the app state for future use.
-
 
 ### GET
 
@@ -261,8 +261,8 @@ Also, this throws an exception if it can't seem to practically generate all
 commands. Usually that means something about the preconditions is preventing it
 from doing so.
 
-Since `check!` doesn't use an implementation to compare against. No verification
-of `verify` methods are made.
+Since `check!` doesn't have an implementation to compare against. No
+verification of `verify` methods are made.
 
 ## Generating Test Programs
 
@@ -321,7 +321,6 @@ to use against an actual implementation:
 `kv-interpreter` receives a transition, one at a time. If we used the generated
 example from above, it would be roughly similar to:
 
-
 ```clojure
 (let [kv (kv-interpreter)]
   (kv [:put :W4 {}])
@@ -329,7 +328,14 @@ example from above, it would be roughly similar to:
 ```
 
 With the return value of `kv` being given to the state machine's `verify`
-methods for each transition.
+methods for each transition. So, it's more akin to:
+
+```clojure
+(let [kv (kv-interpreter)]
+  (and
+   (statem/verify ... (kv [:put :W4 {}]))
+   (statem/verify ... (kv [:get :W4]))))
+```
 
 Enough babbling, let's put it all together into a property:
 
@@ -360,7 +366,7 @@ Sometimes it's easy enough to see the problem by the list of commands executed
 that test.check emits, but it would be nice to get more details!
 
 We can wrap our `run-cmds` call with `print-failed-runs!` which will print the
-command and its return value:
+command and its return value when a generated program fails:
 
 
 ```clojure
@@ -384,6 +390,13 @@ In stdout of the repl, we'll get a lot of printing with the final being:
 ======END=======
 ```
 
+The log lines are basically formatted as follows:
+
+ 1. Passing (✓) or failing (x) of the command's verify method.
+ 2. The command used, along with it's generated data.
+ 3. `->` to separate the input data with the output data
+ 4. The subject-under-test's return value. (Our `:put` transition doesn't define a return value behavior.)
+
 Here, we see when we called `get` we got our original value instead of the
 latter put value.
 
@@ -406,6 +419,7 @@ This can be used as a example-based test if you just use `:pass?` like:
   (let [cmds [[:set [:var 16] [:put :A 0]]
               [:set [:var 17] [:put :A 1]]
               [:set [:var 18] [:get :A]]]]
+    ;; instead of `:pass?`, you can also use [[clojure.test.check.results/pass?]] as well.
     (is (:pass?
           (statem/print-failed-runs!
             (statem/run-cmds key-value-statem cmds (kv-interpreter)))))))
