@@ -918,7 +918,7 @@
             (condp = (:debug v)
               ::no-debug  (str (pr-str (:return-value v)))
               ::exception (str "threw" (pr-str (:return-value v)))
-              (str (pr-str (:return-value v)) " | " (:debug v))))))
+              (str (pr-str (:return-value v)) " (verify-debug " (:debug v) ")")))))
 
 (defn interpreter-with-cleanup
   "Adds metadata to an interpreter function to allow cleanup code to run after a
