@@ -62,8 +62,13 @@
   (verify-debug [_ model-state previous-model-state args return-value]
     "Called when verify of Command returns false. Allows returning a data structure for debugging.
 
+    Useful to return model-state information related to verify.
+
     Return `:net.jeffhui.check.statem/no-debug` to indicate no debugging
-    information. (Default for [[defstatem]]/[[defcommand]] macros)
+    information. (Default for [[defstatem]]/[[defcommand]] macros).
+
+    Note: remember that debugging information already includes return-value. So
+    it's typically not useful to return it as well.
     "))
 
 ;; Implementation detail:

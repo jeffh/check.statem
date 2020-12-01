@@ -47,12 +47,11 @@ While you can currently do something like:
 (def kv-store-ops-generator (gen/vector (gen/one-of [get-generator put-generator])))
 ```
 
-It assumes a naive form of command generation, it's much more difficult to
-encode related behaviors across commands:
+It assumes a naive form of command generation. While that's good for fuzzing,
+it's more difficult to encode related behaviors across commands:
 
 - What if you always want `get` to fetch a key a previous `put` has placed?
 - What if you always want `put` to write to keys used yet?
-
 
 That's not even considering the shrinking behaviors:
 
