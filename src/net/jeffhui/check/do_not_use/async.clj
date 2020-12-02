@@ -4,7 +4,8 @@
   Provides asynchronous test running."
   (:require [net.jeffhui.check.statem :as statem]
             [net.jeffhui.check.statem.internal :as internal :refer [trace]]
-            [clojure.test.check.results :as results]))
+            [clojure.test.check.results :as results])
+  (:import net.jeffhui.check.statem.StateMachine))
 
 (defn- error? [e] ;; TODO: move to internal and remove duplicates
   (boolean (::fail-fast (ex-data e))))
@@ -51,7 +52,7 @@
                              (case (statem/kind c)
                                :observable ;; SUT can be interacted with this command
                                (let [next-mstate   (statem/advance c mstate v cmd)
-                                     return-value  (statem/interpreter cmd {:var-table var-table})
+                                     return-value  (interpreter cmd {:var-table var-table})
                                      verify-result (and (not (error? return-value))
                                                         (statem/verify c next-mstate mstate cmd return-value))]
                                  (if (results/pass? verify-result)
@@ -61,7 +62,7 @@
                                             var-table
                                             (assoc var-table v return-value))
                                           (conj! history (statem/->HistoryEntry verify-result next-mstate cmd return-value var-table
-                                                                                (cond (statem/error? return-value)            ::exception
+                                                                                (cond (error? return-value)            ::exception
                                                                                       (satisfies? statem/DebuggableCommand c) (statem/verify-debug c next-mstate mstate cmd return-value)
                                                                                       :else                                   ::no-debug))))
                                    ;; we may need to walk through conjectured states
