@@ -8,7 +8,6 @@
             [clojure.test.check.random :as random]
             [clojure.test.check.rose-tree :as rose-tree]
             [clojure.walk :as walk]
-            [clojure.test.check.rose-tree :as rose]
             [clojure.test.check.results :as results]))
 
 (defn- generate-rt
@@ -153,7 +152,7 @@
                                  (zero? (mod (swap! state inc) 5)))))))))))
 
 #_
-(doseq [r (rose/seq (generate-rt (cmd-seq queue-statem) 5))]
+(doseq [r (rose-tree/seq (generate-rt (cmd-seq queue-statem) 5))]
   (clojure.pprint/pprint r))
 
 
@@ -280,9 +279,9 @@
   [mstate] ;; the internal model state -- starts as nil
   ;; define transitions
   (:put ;; name of the transition
-    (args [] [gen/keyword (gen/scale #(int (/ % 10)) gen/int)]) ;; associated data generators for this transition
-    (advance [_ [_ k value]] ;; next-mstate given the generated data and the current mstate
-      (assoc mstate k value)))
+   (args [] [statem/fast-keyword #_gen/keyword (gen/scale #(int (/ % 10)) gen/int)]) ;; associated data generators for this transition
+   (advance [_ [_ k value]] ;; next-mstate given the generated data and the current mstate
+            (assoc mstate k value)))
   (:get
     ;; precondition for this transition to be utilized (here: we must have stored something)
     (assume [] (pos? (count mstate)))
@@ -301,6 +300,7 @@
         :put (swap! state conj (vec (rest cmd)))
         :get (second (first (filter (comp (partial = (second cmd)) first) @state)))))))
 
+;; good version
 (defn kv-interpreter []
   (let [state (atom [])]
     (fn interpreter [cmd ctx]
@@ -314,4 +314,33 @@
    (statem/print-failed-runs!
     (run-cmds key-value-statem cmds (kv-interpreter)))))
 
+#_
+(take 10
+      (rose-tree/seq
+       (let [rng (clojure.test.check.random/make-random)]
+         (rose-tree/zip vector [(gen/call-gen gen/keyword rng 30) (gen/call-gen gen/keyword rng 30)]))))
+
+#_
+(def rt
+  (let [rng (clojure.test.check.random/make-random)]
+    (gen/call-gen (cmd-seq key-value-statem) rng 30)))
+
+#_(rose-tree/root rt)
+#_(take 10 (rose-tree/seq rt))
+
+(deftest empty-cmds
+  (is (empty? (first (:smallest (:shrunk (tc/quick-check 5 (for-all [cmds (cmd-seq key-value-statem)]
+                                                                    false))))))))
+
 #_(net.jeffhui.check.statem.internal/dump-trace)
+
+(def hashmap-statem
+  (let [test-keys ["" "a" "house" "tree" "λ"]]
+    (statem/->statem
+     {:name     "HashmapStateMachine"
+      :commands {:put {:args       (fn [state] [(gen/elements test-keys) gen/int])
+                       :next-state (fn [state [_ k v] _] (assoc state k v))}
+                 :get {:requires      (fn [state] (seq state))
+                       :args          (fn [state] [(gen/elements test-keys)])
+                       :postcondition (fn [prev-state _ [_ k] val]
+                                        (= (get prev-state k) val))}}})))
