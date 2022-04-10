@@ -86,7 +86,7 @@
   []
   (let [statem queue-statem]
     (gen/such-that
-     ;; single commands can potentially be valid queue-statem (see )
+     ;; single commands can potentially be valid queue-statem
      #(not= :new (first (last (first %))))
      (gen/not-empty
       (gen/vector
