@@ -344,3 +344,36 @@
                        :args          (fn [state] [(gen/elements test-keys)])
                        :postcondition (fn [prev-state _ [_ k] val]
                                         (= (get prev-state k) val))}}})))
+
+(defn adder-interpreter []
+  (fn [cmd {:keys [var-table]}]
+    (case (first cmd)
+      :add (apply + (map (fn [x] (if (statem/varsym? x)
+                                   (var-table x)
+                                   x))
+                         (rest cmd))))))
+
+(defstatem adder-statem
+  [mstate]
+  (:add (args []
+          (let [g (if-let [vars (not-empty (keys (:vars mstate)))]
+                    (gen/one-of [gen/int (gen/elements (vec vars))])
+                    gen/int)]
+            [g g g]))
+        (advance [v [_ & xs]]
+          (let [out (apply + (map (fn [x]
+                                    (if (statem/varsym? x)
+                                      (get-in mstate [:vars x])
+                                      x))
+                                  xs))]
+            (-> mstate
+                (assoc :latest out)
+                (assoc-in [:vars v] out))))
+        (verify [prev-mstate _ r]
+          (= r (:latest mstate)))))
+
+(defspec sequential-adding
+  (for-all [cmds (cmd-seq adder-statem)]
+           (statem/print-failed-runs!
+            (run-cmds adder-statem cmds (adder-interpreter)))))
+
